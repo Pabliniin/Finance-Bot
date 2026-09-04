@@ -1,0 +1,65 @@
+[project]
+name = "bot-finanzas"
+version = "0.1.0"
+description = "Sistema de apoyo a la decision para trading discrecional en forex (paper trading, senales basadas en reglas, seguimiento honesto de rendimiento real)."
+requires-python = ">=3.11"
+readme = "README.md"
+license = { text = "Proprietary" }
+
+dependencies = [
+    "pandas>=2.2",
+    "numpy>=1.26",
+    "ta>=0.11.0",
+    "SQLAlchemy>=2.0",
+    "psycopg2-binary>=2.9",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "PyYAML>=6.0",
+    "python-dotenv>=1.0",
+    "requests>=2.32",
+    "feedparser>=6.0",
+    "vaderSentiment>=3.3.2",
+    "discord.py>=2.4",
+    "APScheduler>=3.10",
+    "scipy>=1.13",
+    "statsmodels>=0.14",
+    "tenacity>=8.3",
+    "pyarrow>=16.1",
+]
+
+[project.optional-dependencies]
+# Estas dependencias SOLO se instalan y ejecutan en el mini PC Windows nativo
+# (collector/), nunca dentro de la imagen Docker (Linux). MetaTrader5 no tiene
+# wheels para Linux; duka necesita el terminal/red del host para descargas largas.
+windows-collector = [
+    "MetaTrader5>=5.0.45",
+    "duka>=1.7",
+]
+dev = [
+    "pytest>=8.2",
+    "pytest-cov>=5.0",
+    "ruff>=0.5",
+    "mypy>=1.10",
+    "freezegun>=1.5",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["data", "features", "strategy", "backtest", "risk", "tracking", "bot", "scheduler", "collector", "config", "scripts"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.mypy]
+plugins = ["pydantic.mypy"]
+warn_unused_ignores = true

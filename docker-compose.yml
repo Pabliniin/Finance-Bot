@@ -1,0 +1,57 @@
+name: bot-finanzas
+
+services:
+  db:
+    image: timescale/timescaledb:latest-pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./data/storage/migrations:/docker-entrypoint-initdb.d:ro
+    ports:
+      # Publicado SOLO en localhost: el collector nativo de MT5 (Windows, fuera de
+      # Docker) necesita alcanzar Postgres desde el host. No exponer en 0.0.0.0.
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  bot:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+    command: ["python", "-m", "bot.main"]
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      # Solo lectura: el bot MUESTRA el ultimo informe de backtest (/backtest),
+      # nunca lo genera. Quien lo genera es scheduler (o un run manual de
+      # scripts/run_full_backtest.py).
+      - reports_data:/app/reports:ro
+
+  scheduler:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+    command: ["python", "-m", "scheduler.run"]
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      # Informes diarios generados (HTML/markdown) accesibles desde el host si se
+      # quieren consultar sin pasar por Discord.
+      - reports_data:/app/reports
+
+volumes:
+  postgres_data:
+  reports_data:

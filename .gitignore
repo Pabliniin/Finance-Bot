@@ -1,0 +1,25 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.log
+reports/
+
+# Datos y caches locales (nunca versionar precios/credenciales)
+data_cache/
+*.parquet
+*.db
+*.sqlite3
+postgres_data/
+
+.idea/
+.vscode/

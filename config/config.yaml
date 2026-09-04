@@ -1,0 +1,55 @@
+# Configuracion NO sensible (nada de tokens/credenciales aqui, eso vive en .env).
+# Este archivo se versiona; .env no.
+
+account:
+  capital_reference_eur: 250
+  max_risk_per_trade_pct: 5.0          # % del capital arriesgado en el peor caso (distancia a stop)
+  max_simultaneous_positions: 3
+  max_correlation_between_positions: 0.7   # correlacion de retornos diaria max. permitida entre pares abiertos a la vez
+  max_daily_loss_pct: 8.0              # kill switch diario (% del capital de referencia)
+  max_weekly_loss_pct: 15.0            # kill switch semanal
+  drawdown_suspend_pct: 20.0           # si el DD en vivo supera esto respecto al max historico del backtest, se suspenden señales
+
+timeframes:
+  entry: H1        # timing fino de entrada
+  context: [H4, D1]  # tendencia / regimen
+
+schedule:
+  daily_job_utc: "23:10"        # tras el cierre de la vela diaria y el rollover del broker
+  intraday_job_cron: "5 * * * *"  # minuto 5 de cada hora, tras el cierre de cada H1
+
+data:
+  history_backfill_years: 5       # profundidad de historico a descargar de Dukascopy en el primer arranque
+  provider_live: mt5_xm
+  provider_backtest: dukascopy
+  gap_tolerance_bars: 0           # 0 = cualquier hueco no atribuible a fin de semana se marca como issue
+
+news:
+  rss_sources:
+    - name: investing_forex
+      url: https://www.investing.com/rss/news_25.rss
+    - name: fxstreet_news
+      url: https://www.fxstreet.com/rss/news
+  calendar_source: forexfactory_json
+  calendar_lookahead_days: 7
+  calendar_lookback_days: 2
+
+backtest:
+  train_pct: 0.6
+  validation_pct: 0.2
+  test_pct: 0.2
+  walk_forward_windows: 6
+  monte_carlo_iterations: 2000
+  significance_alpha: 0.05
+  fdr_method: benjamini_hochberg
+  # Drawdown maximo visto en el ultimo backtest guardado (reports/backtest_summary.json).
+  # Null hasta que se ejecute scripts/run_full_backtest.py por primera vez: el
+  # kill switch de drawdown (risk/kill_switch.py) queda inactivo hasta entonces,
+  # a proposito, en vez de usar un numero inventado.
+  reference_max_drawdown_pct: null
+
+reporting:
+  discord_footer: >
+    Analisis automatizado generado por reglas explicitas. No es asesoramiento
+    financiero. Rendimiento pasado (real o simulado) no garantiza resultados
+    futuros. Toda decision de invertir dinero real es exclusivamente tuya.

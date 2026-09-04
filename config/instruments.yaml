@@ -1,0 +1,108 @@
+# Universo de instrumentos. Los valores de pip_decimal/contract_size son
+# referencia para calculos offline (backtest sin conexion a MT5); en produccion
+# el collector siempre debe preferir los valores reales de symbol_info() de MT5,
+# porque los specs exactos (spread tipico, lote minimo, digitos) dependen de XM
+# y pueden cambiar. Este YAML es el fallback y la fuente para el universo a barrer.
+
+instruments:
+  # --- Majors (7) ---
+  - symbol: EURUSD
+    category: major
+    pip_decimal: 4
+  - symbol: GBPUSD
+    category: major
+    pip_decimal: 4
+  - symbol: USDJPY
+    category: major
+    pip_decimal: 2
+  - symbol: USDCHF
+    category: major
+    pip_decimal: 4
+  - symbol: USDCAD
+    category: major
+    pip_decimal: 4
+  - symbol: AUDUSD
+    category: major
+    pip_decimal: 4
+  - symbol: NZDUSD
+    category: major
+    pip_decimal: 4
+
+  # --- Crosses EUR (6) ---
+  - symbol: EURGBP
+    category: cross
+    pip_decimal: 4
+  - symbol: EURJPY
+    category: cross
+    pip_decimal: 2
+  - symbol: EURCHF
+    category: cross
+    pip_decimal: 4
+  - symbol: EURCAD
+    category: cross
+    pip_decimal: 4
+  - symbol: EURAUD
+    category: cross
+    pip_decimal: 4
+  - symbol: EURNZD
+    category: cross
+    pip_decimal: 4
+
+  # --- Crosses GBP (5) ---
+  - symbol: GBPJPY
+    category: cross
+    pip_decimal: 2
+  - symbol: GBPCHF
+    category: cross
+    pip_decimal: 4
+  - symbol: GBPCAD
+    category: cross
+    pip_decimal: 4
+  - symbol: GBPAUD
+    category: cross
+    pip_decimal: 4
+  - symbol: GBPNZD
+    category: cross
+    pip_decimal: 4
+
+  # --- Crosses JPY restantes (4) ---
+  - symbol: CHFJPY
+    category: cross
+    pip_decimal: 2
+  - symbol: CADJPY
+    category: cross
+    pip_decimal: 2
+  - symbol: AUDJPY
+    category: cross
+    pip_decimal: 2
+  - symbol: NZDJPY
+    category: cross
+    pip_decimal: 2
+
+  # --- Crosses AUD/NZD/CAD/CHF restantes (6) ---
+  - symbol: AUDCAD
+    category: cross
+    pip_decimal: 4
+  - symbol: AUDCHF
+    category: cross
+    pip_decimal: 4
+  - symbol: AUDNZD
+    category: cross
+    pip_decimal: 4
+  - symbol: CADCHF
+    category: cross
+    pip_decimal: 4
+  - symbol: NZDCAD
+    category: cross
+    pip_decimal: 4
+  - symbol: NZDCHF
+    category: cross
+    pip_decimal: 4
+
+  # --- Metales (2) ---
+  - symbol: XAUUSD
+    category: metal
+    pip_decimal: 2
+  - symbol: XAGUSD
+    category: metal
+    pip_decimal: 3
