@@ -6,6 +6,7 @@ python -m finance_bot scan         # un escaneo ahora mismo, imprime lo que envi
 python -m finance_bot run          # arranca el bot de Discord (escaneo automatico + comandos)
 python -m finance_bot check        # comprueba configuracion, datos, modelo y conexiones
 python -m finance_bot invitar      # enlace para meter el bot en tu servidor de Discord
+python -m finance_bot update       # baja y aplica la ultima version del repositorio
 """
 
 from __future__ import annotations
@@ -60,6 +61,12 @@ def _cmd_run(args: argparse.Namespace) -> int:
     from finance_bot.discord_bot.app import run_bot
 
     return run_bot()
+
+
+def _cmd_update(args: argparse.Namespace) -> int:
+    from finance_bot.updater import run_update_command
+
+    return run_update_command()
 
 
 def _cmd_check(args: argparse.Namespace) -> int:
@@ -144,6 +151,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("scan", help="un escaneo inmediato sin enviar nada").set_defaults(func=_cmd_scan)
     sub.add_parser("run", help="arranca el bot de Discord").set_defaults(func=_cmd_run)
     sub.add_parser("check", help="comprobacion de salud").set_defaults(func=_cmd_check)
+    sub.add_parser("update", help="baja y aplica la ultima version del repositorio").set_defaults(func=_cmd_update)
     sub.add_parser("invitar", help="enlace para meter el bot en tu servidor de Discord").set_defaults(func=_cmd_invitar)
 
     args = parser.parse_args(argv)

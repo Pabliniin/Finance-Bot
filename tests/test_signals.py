@@ -153,3 +153,26 @@ def test_extra_target_is_hidden_when_it_is_not_further_than_tp2() -> None:
 def test_sell_targets_go_down() -> None:
     signal = _signal(direction=-1, entry=100.0, r_price=2.0, targets_r=(1.0, 2.0), extra_target_r=3.0)
     assert [round(price, 2) for _, price, _, _ in signal.targets()] == [98.0, 96.0, 94.0]
+
+
+def test_informative_mode_shows_setups_below_threshold_with_a_warning(cfg) -> None:
+    """El proposito del modo informativo es enseñar lo que ve: el umbral y los
+    casos escasos pasan a avisos. Lo que sigue bloqueando es lo que hace que
+    la operacion no sea ejecutable tal como se describe (llega tarde)."""
+    engine = SignalEngine(cfg, md=None, artifacts=None)  # type: ignore[arg-type]
+    now = datetime(2026, 9, 22, 10, 5, tzinfo=UTC)
+
+    low = _signal(validated=False, p_tp1=0.48, threshold=0.65, similar_n=5, similar_ev=-0.09)
+    engine._apply_gates(low, "informative", now)
+    assert low.emit
+    assert any("umbral" in w for w in low.warnings)
+    assert any("casos similares" in w for w in low.warnings)
+    assert any("SIN VENTAJA VALIDADA" in w for w in low.warnings)
+
+    late = _signal(validated=False, signal_time=pd.Timestamp("2026-09-22 09:00", tz="UTC"))
+    engine._apply_gates(late, "informative", now)
+    assert not late.emit and any("llega tarde" in b for b in late.blockers)
+
+    strict_low = _signal(p_tp1=0.48, threshold=0.65)
+    engine._apply_gates(strict_low, "strict", now)
+    assert not strict_low.emit  # en estricto el umbral sigue bloqueando

@@ -54,7 +54,8 @@ plans:
 # habilitadas NO se fijan a mano: los decide la validacion fuera de muestra
 # (models/validation.json). Estos son los minimos de seguridad por encima.
 signals:
-  mode: strict                   # strict: solo grupos validados. informative: tambien los no validados, marcados como tales
+  mode: informative              # informative: envia todos los setups, marcados como NO validados
+                                 # strict: solo combinaciones con ventaja validada (hoy: ninguna)
   min_probability_tp1: 0.0       # suelo EXTRA opcional en vivo (0 = usar solo el umbral validado de cada plan).
                                  # Subirlo da menos señales, no mas fiables: el umbral ya lo fija la validacion.
   min_expected_r: 0.05           # expectativa minima historica (en R, ya descontados costes)

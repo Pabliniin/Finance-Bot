@@ -23,8 +23,16 @@ $excluir = @(".venv", ".git", "logs", "__pycache__", ".mypy_cache", ".pytest_cac
 robocopy $root $destinoCarpeta /E /XD $excluir /XF "*.pyc" /NFL /NDL /NJH /NJS /NP | Out-Null
 if ($LASTEXITCODE -ge 8) { throw "Fallo copiando los ficheros (robocopy $LASTEXITCODE)." }
 
-# El instalador, bien visible en la raiz
+# Version empaquetada: asi el actualizador automatico sabe donde esta y solo
+# baja lo que sea mas nuevo que esto
+$sha = (git -C $root rev-parse HEAD).Trim()
+New-Item -ItemType Directory -Path (Join-Path $destinoCarpeta "data") -Force | Out-Null
+$estado = @{ sha = $sha; packaged_at = (Get-Date).ToUniversalTime().ToString("o"); failed_boots = 0; previous = $false }
+$estado | ConvertTo-Json | Set-Content -Path (Join-Path $destinoCarpeta "data\update_state.json") -Encoding utf8
+
+# Los dos lanzadores, bien visibles en la raiz
 Copy-Item (Join-Path $root "scripts\INSTALAR.bat") (Join-Path $destinoCarpeta "INSTALAR.bat") -Force
+Copy-Item (Join-Path $root "scripts\ACTUALIZAR.bat") (Join-Path $destinoCarpeta "ACTUALIZAR.bat") -Force
 
 $env_ok = Test-Path (Join-Path $destinoCarpeta ".env")
 $datos = (Get-ChildItem (Join-Path $destinoCarpeta "data") -Recurse -File -ErrorAction SilentlyContinue |

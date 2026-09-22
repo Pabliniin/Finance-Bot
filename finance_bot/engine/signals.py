@@ -481,11 +481,13 @@ class SignalEngine:
             ev = "n/d" if s.similar_ev is None else f"{s.similar_ev:+.2f}R"
             strict_rule(f"expectativa historica de casos similares {ev} (minimo {cfg.min_expected_r:+.2f}R)")
         if s.p_tp1 < s.threshold:
-            s.blockers.append(f"probabilidad TP1 {s.p_tp1:.1%} por debajo del umbral validado {s.threshold:.1%}")
+            strict_rule(f"probabilidad TP1 {s.p_tp1:.1%} por debajo del umbral validado {s.threshold:.1%}")
+        if s.similar_n < cfg.min_similar_cases:
+            strict_rule(f"solo {s.similar_n} casos similares (minimo {cfg.min_similar_cases})")
+        # Lo que sigue bloquea en AMBOS modos: no es cuestion de ventaja sino de
+        # que la operacion sea ejecutable y segura tal como se describe.
         if cfg.min_probability_tp1 and s.p_tp1 < cfg.min_probability_tp1:
             s.blockers.append(f"probabilidad TP1 por debajo de tu minimo configurado ({cfg.min_probability_tp1:.1%})")
-        if s.similar_n < cfg.min_similar_cases:
-            s.blockers.append(f"solo {s.similar_n} casos similares (minimo {cfg.min_similar_cases})")
         blackout = cfg.news_blackout_hours.get(s.tf, 0)
         if blackout:
             soon = [e for e in s.news if e.time <= now + timedelta(hours=blackout)]

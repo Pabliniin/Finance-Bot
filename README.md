@@ -294,15 +294,24 @@ esté activo no se emiten señales nuevas. **Nunca se reactiva solo**: `/reactiv
 - Si tu cuenta no es XM Standard, ajusta spread y swap en `config/settings.yaml`.
 
 ## 6. Enlaces legales (portal de Discord)
-El portal rechaza las URL `.md` de GitHub, asi que los documentos estan tambien
-en HTML y publicados:
+El portal rechaza las URL `.md` de GitHub, asi que los documentos estan en HTML
+y publicados con GitHub Pages:
 
-- Terminos: <https://raw.githack.com/Pabliniin/Finance-Bot/main/docs/terminos-de-servicio.html>
-- Privacidad: <https://raw.githack.com/Pabliniin/Finance-Bot/main/docs/politica-de-privacidad.html>
+- Terminos: <https://pabliniin.github.io/Finance-Bot/terminos-de-servicio.html>
+- Privacidad: <https://pabliniin.github.io/Finance-Bot/politica-de-privacidad.html>
 
-Si prefieres una direccion propia, activa GitHub Pages (Settings -> Pages ->
-Deploy from a branch -> `main` -> carpeta `/docs`) y quedan como
-`https://pabliniin.github.io/Finance-Bot/terminos-de-servicio.html`.
+Los sirve la rama `gh-pages` del repositorio. Si cambias los documentos en
+`docs/`, copialos a esa rama para que la web se actualice.
+
+## 6b. Actualizaciones automaticas
+El bot comprueba GitHub al arrancar y cada noche. Si hay un commit nuevo en
+`main`, se lo baja, lo aplica y se reinicia solo (la tarea programada lo vuelve
+a levantar). Datos, modelo, base de datos y `.env` no se tocan. Si el codigo
+nuevo no arranca tres veces seguidas, vuelve solo al anterior.
+
+Para forzarlo a mano: doble clic en `ACTUALIZAR.bat`.
+
+En un PC con `.git` (el de desarrollo) nunca se auto-actualiza: ahi manda git.
 
 ## 7. Limitaciones que debes conocer
 - El histórico es de Dukascopy; en vivo, con MT5, los precios son los de tu broker. La diferencia es pequeña pero existe.

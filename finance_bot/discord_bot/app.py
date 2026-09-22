@@ -29,6 +29,7 @@ import discord
 from discord import app_commands
 from discord.ext import tasks
 
+from finance_bot import updater
 from finance_bot.discord_bot import embeds
 from finance_bot.engine.exits import r_now
 from finance_bot.logging_setup import setup_logging
@@ -74,6 +75,7 @@ class FinanceBot(discord.Client):
         self._ready_once = False
         self._panel_lock = asyncio.Lock()
         self._presence_index = -1
+        self.restart_requested = False
 
     # --- utilidades -------------------------------------------------------------
 
@@ -146,6 +148,8 @@ class FinanceBot(discord.Client):
         if guilds:
             await self._announce()
         logger.info("Bot listo como %s en %d servidor(es)", self.user, len(guilds))
+        updater.boot_guard_ok()
+        asyncio.create_task(self.self_update())  # por si hubo arreglos mientras estaba apagado
 
     async def on_guild_join(self, guild: discord.Guild) -> None:
         """Si lo invitas con el bot ya arrancado, se configura al momento."""
@@ -210,7 +214,7 @@ class FinanceBot(discord.Client):
         hh, mm = (int(x) for x in schedule.daily_report_utc.split(":"))
         self.daily_loop.change_interval(time=time(hh, mm, tzinfo=UTC))
         self.maintenance_loop.change_interval(time=time(22, 30, tzinfo=UTC))
-        for loop in (self.scan_loop, self.daily_loop, self.maintenance_loop):
+        for loop in (self.scan_loop, self.daily_loop, self.maintenance_loop, self.update_loop):
             if not loop.is_running():
                 loop.start()
 
@@ -438,6 +442,28 @@ class FinanceBot(discord.Client):
             weekly.title = "🗓 Resumen semanal (todo el historico del bot)"
             await self.send(weekly)
 
+    async def self_update(self) -> None:
+        """Si hay codigo nuevo en GitHub, se aplica y el bot se reinicia solo
+        (la tarea programada lo vuelve a levantar). Nadie tiene que tocar el
+        PC donde vive."""
+        try:
+            applied = await self.run_blocking(updater.check_and_apply)
+        except Exception:  # noqa: BLE001
+            logger.exception("comprobacion de actualizaciones fallida")
+            return
+        if not applied:
+            return
+        logger.info("Codigo actualizado: reiniciando")
+        await self.send(embeds.simple_embed("🔄 Actualizado", "Hay una version nueva; me reinicio en unos segundos."))
+        self.restart_requested = True
+        await self.close()
+
+    @tasks.loop(hours=1)
+    async def update_loop(self) -> None:
+        """Una consulta barata a GitHub cada hora: asi un arreglo llega al PC
+        del bot sin que nadie lo toque, y sin esperar a la noche."""
+        await self.self_update()
+
     @tasks.loop(time=time(22, 30, tzinfo=UTC))
     async def maintenance_loop(self) -> None:
         try:
@@ -447,6 +473,7 @@ class FinanceBot(discord.Client):
             logger.exception("mantenimiento diario fallo")
 
     @scan_loop.before_loop
+    @update_loop.before_loop
     @daily_loop.before_loop
     @maintenance_loop.before_loop
     async def _wait_ready(self) -> None:
@@ -762,6 +789,7 @@ def run_bot() -> int:
         )
     bot = FinanceBot(service)
     logger.info("Arrancando bot de Discord")
+    updater.boot_guard_start()  # si una actualizacion reciente no arranca, se revierte sola
     try:
         bot.run(token, log_handler=None)  # el logging ya esta configurado por setup_logging
     except discord.LoginFailure:
@@ -774,4 +802,7 @@ def run_bot() -> int:
             "Discord pide intents privilegiados. Este bot no los necesita: revisa que no los hayas activado "
             "a medias en el portal (pestaña Bot)."
         ) from None
+    if bot.restart_requested:
+        updater.schedule_restart()
+        return updater.EXIT_RESTART
     return 0
