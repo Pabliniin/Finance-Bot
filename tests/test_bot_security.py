@@ -129,3 +129,16 @@ def test_startup_message_only_the_first_time(cfg, monkeypatch) -> None:
     stored[bot_app.PANEL_SETTING] = "123"
     asyncio.run(bot._announce())
     assert len(sent) == 1  # ya hay panel: silencio
+
+
+def test_ping_follows_notification_config(cfg) -> None:
+    bot = _bot(cfg, {111}, admins="5")
+    assert bot.ping_content() == "@here"  # por defecto avisa a todos los conectados
+
+    bot.service.cfg = cfg.model_copy(
+        update={"notifications": cfg.notifications.model_copy(update={"mention": "admins"})}
+    )
+    assert bot.ping_content() == "<@5>"
+
+    bot.service.cfg = cfg.model_copy(update={"notifications": cfg.notifications.model_copy(update={"mention": "none"})})
+    assert bot.ping_content() is None

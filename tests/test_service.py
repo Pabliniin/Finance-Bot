@@ -140,3 +140,40 @@ def test_realtime_feed_is_never_replaced(service: BotService, monkeypatch) -> No
     service._feed_checked = datetime.now(UTC) - service_module.FEED_RETRY * 10
     monkeypatch.setattr(service_module, "create_feed", lambda cfg, secrets: pytest.fail("no hace falta reconectar"))
     assert service._ensure_feed().name == "MT5"
+
+
+def test_live_feed_failure_falls_back_to_delayed_source(service: BotService, monkeypatch) -> None:
+    """MT5 se cae a mitad de sesion: el bot sigue con el respaldo retrasado y
+    lo dice, en vez de quedarse mudo con un error."""
+    from finance_bot import service as service_module
+    from finance_bot.data.live import LiveFeedError
+
+    class Broken:
+        name, realtime = "MT5", True
+
+        def fetch_m1(self, symbol, since):
+            raise LiveFeedError("MT5 no devolvio velas: (-10001, 'IPC send failed')")
+
+    class Delayed(FakeFeed):
+        name, realtime = "Dukascopy (retraso ~1h)", False
+
+    service.feed = Broken()  # type: ignore[assignment]
+    monkeypatch.setattr(service_module, "DukascopyFeed", lambda cfg: Delayed())
+
+    notice = service.refresh_with_fallback()
+    assert notice is not None and "retraso" in notice
+    assert service.feed.name.startswith("Dukascopy")
+
+
+def test_delayed_feed_failure_is_a_real_error(service: BotService) -> None:
+    from finance_bot.data.live import LiveFeedError
+
+    class BrokenDelayed:
+        name, realtime = "Dukascopy (retraso ~1h)", False
+
+        def fetch_m1(self, symbol, since):
+            raise LiveFeedError("sin red")
+
+    service.feed = BrokenDelayed()  # type: ignore[assignment]
+    with pytest.raises(LiveFeedError):
+        service.refresh_with_fallback()

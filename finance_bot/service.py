@@ -15,7 +15,7 @@ import pandas as pd
 from finance_bot.config import AppConfig, Secrets, load_config, load_secrets
 from finance_bot.data.calendar import EconomicCalendar
 from finance_bot.data.dukascopy import DukascopyClient, download_h1_history, download_m1_history
-from finance_bot.data.live import LiveFeed, LiveFeedError, create_feed
+from finance_bot.data.live import DukascopyFeed, LiveFeed, LiveFeedError, create_feed
 from finance_bot.data.market import MarketData
 from finance_bot.engine import exits
 from finance_bot.engine.exits import ExitAdvice
@@ -40,6 +40,7 @@ _MISSING = _Missing()
 
 @dataclass
 class ScanResult:
+    notice: str | None = None  # aviso de degradacion (no es un fallo: el bot sigue)
     new_signals: list[Signal] = field(default_factory=list)
     advice: list[ExitAdvice] = field(default_factory=list)
     events: list[dict] = field(default_factory=list)
@@ -100,6 +101,23 @@ class BotService:
             self.md.m1_store.write(symbol, bars)
             self.complete_until[symbol] = complete_until
 
+    def refresh_with_fallback(self) -> str | None:
+        """Si la fuente en vivo falla (MT5 cerrado, terminal reiniciandose), se
+        sigue con el respaldo retrasado en vez de dejar al bot a ciegas. Con
+        datos retrasados el propio filtro descarta las señales por tardias, asi
+        que no se emite nada dudoso. Devuelve el aviso, si lo hubo."""
+        try:
+            self.refresh_data()
+            return None
+        except (LiveFeedError, OSError) as exc:
+            if self.feed is None or not self.feed.realtime:
+                raise
+            logger.warning("Fuente en vivo caida (%s); paso al respaldo con retraso", exc)
+            self.feed = DukascopyFeed(self.cfg)
+            self._feed_checked = datetime.now(UTC)
+            self.refresh_data()
+            return f"MT5 no responde ({exc}); mientras tanto, datos con retraso"
+
     def maintenance(self) -> str:
         """Diario: consolida el historico con Dukascopy (meses H1 cerrados y
         dias M1 completos). Reanudable y barato si ya esta al dia."""
@@ -137,7 +155,7 @@ class BotService:
         with self._lock:
             result = ScanResult()
             try:
-                self.refresh_data()
+                result.notice = self.refresh_with_fallback()
             except (LiveFeedError, OSError) as exc:
                 result.errors.append(f"datos en vivo: {exc}")
                 self.last_error = str(exc)

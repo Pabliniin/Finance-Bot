@@ -104,6 +104,13 @@ class ScheduleConfig(BaseModel):
     weekly_report_weekday: int = Field(ge=0, le=6)
 
 
+class NotificationsConfig(BaseModel):
+    """A quien se avisa cuando salta algo importante (señal nueva, aviso de
+    cierre urgente, interruptor de seguridad)."""
+
+    mention: Literal["here", "admins", "none"] = "here"
+
+
 class KillSwitchConfig(BaseModel):
     min_signals: int
     max_drawdown_r: float
@@ -144,6 +151,7 @@ class AppConfig(BaseModel):
     research: ResearchConfig
     schedule: ScheduleConfig
     risk: RiskConfig
+    notifications: NotificationsConfig = NotificationsConfig()
     disclaimer: str
     # Version corta para el pie de cada mensaje de Discord (los mensajes tienen
     # que poder leerse de un vistazo, pero sin perder el aviso).

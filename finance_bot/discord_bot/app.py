@@ -92,13 +92,27 @@ class FinanceBot(discord.Client):
     def mention_admins(self) -> str:
         return " ".join(f"<@{uid}>" for uid in sorted(self.service.secrets.admin_user_ids))
 
+    def ping_content(self) -> str | None:
+        """A quien se avisa de lo importante (config notifications.mention)."""
+        modo = self.service.cfg.notifications.mention
+        if modo == "here":
+            return "@here"
+        if modo == "admins":
+            return self.mention_admins() or None
+        return None
+
     async def send(self, embed: discord.Embed, view: discord.ui.View | None = None, ping: bool = False) -> None:
         if self.channel is None:
             logger.warning("Sin canal donde publicar: %s", embed.title)
             return
-        content = self.mention_admins() if ping else None
+        content = self.ping_content() if ping else None
         try:
-            await self.channel.send(content=content, embed=embed, view=view or discord.utils.MISSING)
+            await self.channel.send(
+                content=content,
+                embed=embed,
+                view=view or discord.utils.MISSING,
+                allowed_mentions=discord.AllowedMentions(everyone=True, users=True, roles=False),
+            )
         except discord.HTTPException:
             logger.exception("no se pudo enviar el mensaje al canal")
 
@@ -376,7 +390,7 @@ class FinanceBot(discord.Client):
                 ),
                 ping=True,
             )
-        error = "; ".join(result.errors) or None
+        error = "; ".join(result.errors) or result.notice
         if error != self.last_data_error:
             self.last_data_error = error
             if error:

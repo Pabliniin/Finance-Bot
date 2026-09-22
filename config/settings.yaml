@@ -99,6 +99,11 @@ risk:
     max_drawdown_r: 12.0         # suspension si la racha acumulada cae mas de 12R desde el maximo
     calibration_alpha: 0.01      # suspension si los aciertos reales quedan significativamente por debajo de lo predicho
 
+notifications:
+  mention: here                  # a quien se avisa de una señal o un aviso urgente:
+                                 # here (todos los conectados), admins (los de
+                                 # DISCORD_ADMIN_USER_IDS) o none
+
 disclaimer: >-
   Estimacion estadistica basada en historico fuera de muestra, no una garantia.
   No es asesoramiento financiero. Rendimientos pasados no garantizan resultados
