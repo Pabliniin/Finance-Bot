@@ -1,11 +1,14 @@
 """Mensajes de Discord (embeds).
 
+Criterio: que se lean de un vistazo en el movil. Poco texto, los numeros que
+importan en bloque monoespaciado y nada de parrafos largos.
+
 Reglas de la casa:
 - Todo texto que no escribimos nosotros (titulares de noticias) se escapa: no
   puede romper el formato ni colar menciones.
 - Los limites de Discord se respetan siempre (campo 1024, 25 campos); si algo
   no cabe se recorta con "…" en vez de fallar el envio.
-- Cada mensaje con numeros de rendimiento lleva el descargo.
+- Cada mensaje con numeros de rendimiento lleva el descargo, corto pero claro.
 - `to_text()` convierte cualquier embed en texto plano para la terminal, para
   que `python -m finance_bot scan` enseñe exactamente lo mismo que Discord.
 """
@@ -22,7 +25,7 @@ import pandas as pd
 from finance_bot.config import AppConfig
 from finance_bot.engine.exits import ExitAdvice
 from finance_bot.engine.signals import Analysis, Signal, TimeframeView
-from finance_bot.strategies.voters import FAMILIES, FAMILY_SHORT
+from finance_bot.strategies.voters import FAMILY_SHORT
 
 GREEN = 0x2ECC71
 RED = 0xE74C3C
@@ -67,6 +70,14 @@ def when(ts: datetime | str | pd.Timestamp) -> str:
     return f"{_WEEKDAYS[stamp.dayofweek]} {stamp:%d/%m %H:%M} UTC"
 
 
+def clock(ts: datetime | str | pd.Timestamp | None) -> str:
+    if ts is None:
+        return "n/d"
+    stamp = pd.Timestamp(ts)
+    stamp = stamp.tz_localize("UTC") if stamp.tzinfo is None else stamp.tz_convert("UTC")
+    return f"{stamp:%H:%M} UTC"
+
+
 def _add(embed: discord.Embed, name: str, value: str, inline: bool = False) -> discord.Embed:
     if not value or len(embed.fields) >= MAX_FIELDS:
         return embed
@@ -77,14 +88,14 @@ def _add(embed: discord.Embed, name: str, value: str, inline: bool = False) -> d
 
 
 def _disclaimer(embed: discord.Embed, cfg: AppConfig) -> discord.Embed:
-    embed.set_footer(text=cfg.disclaimer[:2048])
+    embed.set_footer(text=cfg.disclaimer_short[:2048])
     return embed
 
 
 def _plain(text: str) -> str:
     """Sin el marcado de Discord, para leerlo comodo en una terminal."""
     text = re.sub(r"\\([*_~`>|-])", r"\1", text)  # deshace los escapes de escape_markdown
-    return text.replace("**", "").replace("`", "")
+    return text.replace("**", "").replace("```", "").replace("`", "")
 
 
 def to_text(embed: discord.Embed) -> str:
@@ -102,164 +113,128 @@ def to_text(embed: discord.Embed) -> str:
 # --- señal -------------------------------------------------------------------------
 
 
-def _family_summary(votes: list, direction: int) -> str:
-    parts = []
-    for fam, label in FAMILIES.items():
-        fam_votes = [v for v in votes if v.family == fam]
-        if fam_votes:
-            favor = sum(1 for v in fam_votes if v.vote == direction)
-            parts.append(f"{label} {favor}/{len(fam_votes)}")
-    return " · ".join(parts)
-
-
-def _entry_zone(s: Signal, digits: int) -> str:
-    """Zona de entrada: de la referencia (lo validado) hacia el lado bueno."""
-    if s.entry_low is None or s.entry_high is None or s.entry_low >= s.entry_high:
-        return f"`{price(s.entry, digits)}`"
-    zone = f"`{price(s.entry_low, digits)} – {price(s.entry_high, digits)}`"
-    better = "mas abajo" if s.direction > 0 else "mas arriba"
-    return f"{zone}\nReferencia `{price(s.entry, digits)}`; {better} entras mejor, pero puede no llegar"
-
-
-def _targets_block(s: Signal, digits: int) -> str:
+def _plan_block(s: Signal, digits: int) -> str:
+    """El plan entero en un bloque monoespaciado: se lee de una ojeada."""
+    width = max(len(price(v, digits)) for v in (s.entry, s.stop, s.tp2, s.entry_low or s.entry))
     rows = []
+    if s.entry_low is not None and s.entry_high is not None and s.entry_low < s.entry_high:
+        zone = f"{price(s.entry_low, digits)} – {price(s.entry_high, digits)}"
+        rows.append(f"Zona  {zone}")
+    else:
+        rows.append(f"Zona  {price(s.entry, digits):>{width}}")
+    rows.append(f"Ref.  {price(s.entry, digits):>{width}}   entrada validada")
+    rows.append(f"SL    {price(s.stop, digits):>{width}}   -1R = {price(s.r_price, digits)}")
     for label, target_price, r, probability in s.targets():
-        extra = ""
+        note = f"llego {pct(probability)}" if probability is not None else ""
         if label == "TP1":
-            extra = f" · cierra {s.partial:.0%} y stop a la entrada"
+            note += f" · cierra {s.partial:.0%}, stop a entrada"
         elif r > s.targets_r[1]:
-            extra = " · extra, fuera del plan validado"
-        chance = f" · llegaron {pct(probability)}" if probability is not None else ""
-        rows.append(f"**{label}** `{price(target_price, digits)}` (+{r:g}R){chance}{extra}")
-    rows.append(f"**SL** `{price(s.stop, digits)}` (−1R = {price(s.r_price, digits)})")
-    return "\n".join(rows)
+            note += " · extra, no validado"
+        rows.append(f"{label}   {price(target_price, digits):>{width}}  +{r:g}R  {note}".rstrip())
+    return "```\n" + "\n".join(rows) + "\n```"
 
 
 def signal_embed(s: Signal, cfg: AppConfig) -> discord.Embed:
     digits = cfg.instrument(s.symbol).digits
     icon = "🟢" if s.direction > 0 else "🔴"
-    badge = "✅ validada fuera de muestra" if s.validated else "⚠️ **SIN VENTAJA VALIDADA** (modo informativo)"
+    badge = "✅ validada" if s.validated else "⚠️ **SIN VENTAJA VALIDADA**"
+    header = f"{badge} · plan «{esc(s.plan)}» · {esc(s.tf)}"
+    if not s.live_quote:
+        header += " · precio estimado"
     embed = discord.Embed(
-        title=f"{icon} {s.side} · {s.symbol} · {s.tf}",
-        description=f"{badge} · plan «{esc(s.plan)}»",
+        title=f"{icon} {s.side} · {s.symbol}",
+        description=f"{header}\n{_plan_block(s, digits)}",
         color=GREEN if s.direction > 0 else RED,
         timestamp=datetime.now(UTC),
     )
-    _add(embed, "💵 Zona de entrada", _entry_zone(s, digits) + ("" if s.live_quote else "\n(precio estimado)"))
-    _add(embed, "🎯 Objetivos y stop", _targets_block(s, digits))
-    _add(
-        embed,
-        "📊 Probabilidad de tocar TP1 antes que el stop",
-        f"**{pct(s.p_tp1)}** segun el modelo (umbral validado {s.threshold:.1%})\n"
-        f"**{pct(s.similar_tp1_rate)}** es lo que ocurrio en {s.similar_n} casos parecidos "
-        f"({esc(s.similar_scope)})\n"
-        f"TP2: {pct(s.p_tp2)} segun el modelo",
+    prob = (
+        f"TP1 antes que el stop: **{pct(s.p_tp1)}** segun el modelo · "
+        f"**{pct(s.similar_tp1_rate)}** en {s.similar_n} casos parecidos"
     )
     if s.similar_ev is not None:
-        _add(embed, "💰 Expectativa", f"**{s.similar_ev:+.2f}R** por operacion en esos casos, ya con costes", True)
-    duration = (
-        f"Duracion tipica **{hours_text(s.hours_median)}** (3 de cada 4 cierran antes de {hours_text(s.hours_p75)})\n"
-        f"Cierre por tiempo a las {hours_text(s.max_hours)}"
-    )
-    if s.hours_to_tp1_median is not None:
-        duration += f"\nCuando toca TP1, suele tardar {hours_text(s.hours_to_tp1_median)}"
-    _add(embed, "⏱ Cuanto suele durar", duration)
-    favor = [f"• {esc(v.name)} — {esc(v.detail)}" for v in s.votes_for[:5]]
+        prob += f"\nExpectativa de esos casos, con costes: **{s.similar_ev:+.2f}R**"
+    _add(embed, "📊 Probabilidad", prob)
     _add(
         embed,
-        f"✅ A favor ({len(s.votes_for)}/20)",
-        (_family_summary(s.votes_for + s.votes_against, s.direction) + "\n" + "\n".join(favor)).strip(),
+        "⏱ Duracion",
+        f"tipica **{hours_text(s.hours_median)}**\ncierre por tiempo {hours_text(s.max_hours)}",
+        True,
     )
-    if s.votes_against:
-        _add(
-            embed,
-            f"❌ En contra ({len(s.votes_against)})",
-            "\n".join(f"• {esc(v.name)} — {esc(v.detail)}" for v in s.votes_against[:4]),
-        )
-    _add(embed, "🔎 Entrada que dispara", esc(", ".join(s.triggers)))
-    raising = [name for name, v in s.top_factors if v > 0][:3]
-    lowering = [name for name, v in s.top_factors if v < 0][:3]
-    if raising or lowering:
-        _add(
-            embed,
-            "🧠 Lo que mas pesa en la probabilidad",
-            (f"Suben: {esc(', '.join(raising))}\n" if raising else "")
-            + (f"Bajan: {esc(', '.join(lowering))}" if lowering else ""),
-        )
     if s.size is not None:
         size = (
-            f"**{s.size.lots:.2f} lotes** → riesgo {s.size.risk_eur:.2f} € ({s.size.risk_pct:.1f}%)"
+            f"**{s.size.lots:.2f} lotes**\n{s.size.risk_eur:.2f} € ({s.size.risk_pct:.1f}%)"
             if s.size.fits
             else f"⚠️ {esc(s.size.note)}"
         )
-        _add(embed, "💶 Tamaño para tu capital", size, True)
-    _add(embed, "💸 Coste estimado", f"{s.cost_r:.2f}R (spread + deslizamiento)", True)
+        _add(embed, "💶 Tamaño", size, True)
+    fam = _family_line(s.votes_for + s.votes_against, s.direction)
+    _add(
+        embed,
+        f"🧭 Por que ({len(s.votes_for)}/20 a favor)",
+        f"{esc(fam)}\nDispara: {esc(', '.join(s.triggers))}",
+    )
     if s.news:
         _add(
             embed,
-            "📅 Noticias de alto impacto (72h)",
-            "\n".join(f"• {esc(e.currency)} {esc(e.title)} — {when(e.time)}" for e in s.news[:4]),
+            "📅 Noticias",
+            "\n".join(f"{esc(e.currency)} {esc(e.title)} — {when(e.time)}" for e in s.news[:3]),
         )
-    for warning in s.warnings:
-        _add(embed, "⚠️ Aviso", esc(warning))
+    if s.warnings:
+        _add(embed, "⚠️ Ojo", "\n".join(f"• {esc(w)}" for w in s.warnings[:3]))
     return _disclaimer(embed, cfg)
+
+
+def _family_line(votes: list, direction: int) -> str:
+    parts = []
+    for key, label in FAMILY_SHORT.items():
+        family_votes = [v for v in votes if v.family == key]
+        if family_votes:
+            favor = sum(1 for v in family_votes if v.vote == direction)
+            parts.append(f"{label} {favor}/{len(family_votes)}")
+    return " · ".join(parts)
 
 
 # --- analisis ----------------------------------------------------------------------
 
 
-def _view_value(v: TimeframeView, digits: int) -> str:
-    fam = []
-    for key, label in FAMILY_SHORT.items():
-        votes = [x.vote for x in v.votes if x.family == key]
-        if votes:
-            fam.append(f"{label} {votes.count(1)}↑{votes.count(-1)}↓")
-    text = (
-        f"RSI {v.rsi:.0f} · ADX {v.adx:.0f} · ATR {price(v.atr, digits)}\n"
-        f"soporte {price(v.support, digits)} · resistencia {price(v.resistance, digits)}\n"
-        f"{esc(' · '.join(fam))}\nvela cerrada {when(v.bar_close)}"
-    )
+def _view_line(v: TimeframeView, digits: int) -> str:
+    line = f"{BIAS_ICON[v.bias]} `{v.tf:<3}` **{v.score:+d}**/20 · RSI {v.rsi:.0f} · ADX {v.adx:.0f}"
+    if v.support is not None or v.resistance is not None:
+        line += f" · sop {price(v.support, digits)} / res {price(v.resistance, digits)}"
     if v.triggers_long or v.triggers_short:
         trig = [f"{t} (compra)" for t in v.triggers_long] + [f"{t} (venta)" for t in v.triggers_short]
-        text += f"\n🔎 Entradas activas: {esc(', '.join(trig))}"
-    return text
+        line += f"\n   🔎 {esc(', '.join(trig))}"
+    return line
 
 
 def analysis_embed(a: Analysis, cfg: AppConfig) -> discord.Embed:
     digits = cfg.instrument(a.symbol).digits
     total = sum(v.score for v in a.views.values())
     color = GREEN if total >= 4 else RED if total <= -4 else GREY
-    header = f"Precio {price(a.quote[0], digits)} / {price(a.quote[1], digits)} (bid/ask)\n" if a.quote else ""
+    head = f"**{price(a.quote[0], digits)}** · " if a.quote else ""
     embed = discord.Embed(
-        title=f"📈 {a.symbol} — todo lo que ve el bot",
-        description=f"{header}Datos hasta "
-        f"{when(a.data_until) if a.data_until is not None else 'n/d'} · fuente {esc(a.feed)}",
+        title=f"📈 {a.symbol}",
+        description=f"{head}datos hasta {clock(a.data_until)} · {esc(a.feed)}",
         color=color,
         timestamp=datetime.now(UTC),
     )
-    for tf in ("D1", "H4", "H1", "M15"):
-        if tf in a.views:
-            v = a.views[tf]
-            _add(embed, f"{BIAS_ICON[v.bias]} {tf} · sesgo {v.bias} ({v.score:+d}/20)", _view_value(v, digits))
+    lines = [_view_line(a.views[tf], digits) for tf in ("D1", "H4", "H1", "M15") if tf in a.views]
+    _add(embed, "Temporalidades", "\n".join(lines))
     if a.signals:
-        lines = []
+        rows = []
         for s in a.signals:
-            status = "✅ cumple todo → señal" if s.emit else "⛔ " + "; ".join(s.blockers)
-            lines.append(
-                f"**{s.side} {s.tf}** · prob. TP1 {pct(s.p_tp1)} · casos parecidos "
+            status = "✅ cumple todo" if s.emit else "⛔ " + "; ".join(s.blockers)
+            rows.append(
+                f"**{s.side} {s.tf}** · TP1 {pct(s.p_tp1)} · "
                 f"{'n/d' if s.similar_ev is None else f'{s.similar_ev:+.2f}R'}\n{esc(status)}"
             )
-        _add(embed, "🎯 Setups en la ultima vela cerrada", "\n\n".join(lines))
+        _add(embed, "🎯 Setups", "\n".join(rows))
     else:
-        _add(embed, "🎯 Setups", "Ninguna estrategia de entrada dispara en la ultima vela cerrada.")
+        _add(embed, "🎯 Setups", "Ninguna entrada dispara en la ultima vela cerrada.")
     if a.news:
-        _add(
-            embed,
-            "📅 Noticias de alto impacto",
-            "\n".join(f"• {esc(e.currency)} {esc(e.title)} — {when(e.time)}" for e in a.news[:5]),
-        )
-    for warning in a.warnings:
-        _add(embed, "⚠️ Aviso", esc(warning))
+        _add(embed, "📅 Noticias", "\n".join(f"{esc(e.currency)} {esc(e.title)} — {when(e.time)}" for e in a.news[:3]))
+    if a.warnings:
+        _add(embed, "⚠️ Ojo", "\n".join(f"• {esc(w)}" for w in a.warnings[:3]))
     return _disclaimer(embed, cfg)
 
 
@@ -268,48 +243,40 @@ def analysis_embed(a: Analysis, cfg: AppConfig) -> discord.Embed:
 
 def advice_embed(advice: ExitAdvice, cfg: AppConfig) -> discord.Embed:
     icon = "🚨" if advice.urgency == "alta" else "⏳"
+    now_r = f" · vas **{advice.r_now:+.2f}R**" if advice.r_now is not None else ""
     embed = discord.Embed(
-        title=f"{icon} Vigila tu {advice.side} de {advice.symbol} {advice.tf}",
-        description=f"**{esc(advice.headline)}**\n{esc(advice.detail)}",
+        title=f"{icon} {advice.side} {advice.symbol} {advice.tf} — {advice.headline}",
+        description=f"{esc(advice.detail)}{now_r}",
         color=RED if advice.urgency == "alta" else AMBER,
         timestamp=datetime.now(UTC),
     )
-    if advice.r_now is not None:
-        _add(embed, "Vas en", f"**{advice.r_now:+.2f}R** si cierras ahora", True)
-    _add(
-        embed,
-        "Que es esto",
-        "Aviso de contexto, **no** forma parte de lo validado: el backtest mantiene hasta stop, objetivo o cierre "
-        "por tiempo. Queda guardado con este R para compararlo despues con el resultado real (`/stats`). Tu decides.",
-    )
-    return _disclaimer(embed, cfg)
+    embed.set_footer(text="Aviso de contexto, no validado: el plan aguanta hasta stop, objetivo o tiempo. Tu decides.")
+    return embed
 
 
 def event_embed(event: dict, cfg: AppConfig) -> discord.Embed:
     symbol, tf = event["symbol"], event["tf"]
     side = "COMPRA" if event["direction"] > 0 else "VENTA"
     if event["type"] == "tp1":
-        return _disclaimer(
-            discord.Embed(
-                title=f"🎯 TP1 alcanzado · {side} {symbol} {tf}",
-                description="Segun el plan: cierra la mitad y mueve el stop a la entrada.\n"
-                f"Ha tardado {hours_text(event.get('hours'))}.",
-                color=GREEN,
-                timestamp=datetime.now(UTC),
-            ),
-            cfg,
+        embed = discord.Embed(
+            title=f"🎯 TP1 · {side} {symbol} {tf}",
+            description=f"Cierra {event.get('partial', 0.5):.0%} y mueve el stop a la entrada. "
+            f"Tardo {hours_text(event.get('hours'))}.",
+            color=GREEN,
+            timestamp=datetime.now(UTC),
         )
+        return _disclaimer(embed, cfg)
     reasons = {
         "stop": ("🛑 Stop", RED),
-        "tp2": ("🏁 TP2 alcanzado", GREEN),
+        "tp2": ("🏁 TP2", GREEN),
         "tp1_be": ("🤝 Cerrada en la entrada tras TP1", AMBER),
         "time": ("⌛ Cerrada por tiempo", GREY),
     }
     title, color = reasons.get(str(event.get("reason")), ("🔚 Cerrada", GREY))
     r = float(event.get("realized_r", 0.0))
     embed = discord.Embed(
-        title=f"{title} · {side} {symbol} {tf}",
-        description=f"Resultado siguiendo el plan: **{r:+.2f}R** en {hours_text(event.get('hours'))}.",
+        title=f"{title} · {side} {symbol} {tf} · {r:+.2f}R",
+        description=f"Siguiendo el plan, en {hours_text(event.get('hours'))}.",
         color=color if r >= 0 else RED,
         timestamp=datetime.now(UTC),
     )
@@ -319,9 +286,8 @@ def event_embed(event: dict, cfg: AppConfig) -> discord.Embed:
         verdict = "habria sido mejor" if diff > 0.05 else ("habria dado igual" if abs(diff) <= 0.05 else "fue peor")
         _add(
             embed,
-            "El aviso de gestion, a toro pasado",
-            f"Aviso: {esc(event.get('advice_headline') or '')} con **{float(advice_r):+.2f}R**.\n"
-            f"Cerrar ahi {verdict} ({diff:+.2f}R frente al plan).",
+            "El aviso, a toro pasado",
+            f"Avise con **{float(advice_r):+.2f}R**: cerrar ahi {verdict} ({diff:+.2f}R).",
         )
     return _disclaimer(embed, cfg)
 
@@ -331,9 +297,7 @@ def event_embed(event: dict, cfg: AppConfig) -> discord.Embed:
 
 def _bias_line(a: Analysis) -> str:
     parts = [
-        f"{tf} {BIAS_ICON[a.views[tf].bias]} {a.views[tf].score:+d}"
-        for tf in ("D1", "H4", "H1", "M15")
-        if tf in a.views
+        f"{tf} {BIAS_ICON[a.views[tf].bias]}{a.views[tf].score:+d}" for tf in ("D1", "H4", "H1", "M15") if tf in a.views
     ]
     return " · ".join(parts) if parts else "sin datos"
 
@@ -345,42 +309,35 @@ def panel_embed(
     cfg: AppConfig,
     r_by_key: dict[str, float] | None = None,
 ) -> discord.Embed:
-    """El panel fijo del canal: de un vistazo, como esta todo ahora mismo."""
+    """El panel fijo del canal: como esta todo ahora mismo, de un vistazo."""
     ks_active, ks_reason = health["kill_switch"]
     mode = "estricto" if health["mode"] == "strict" else "informativo"
     embed = discord.Embed(
-        title="🧭 Panel — XAUUSD y EURUSD",
-        description=f"Modo **{mode}** · fuente {esc(health['feed'])} · "
-        f"ultimo escaneo {when(health['last_scan']) if health['last_scan'] else 'aun ninguno'}",
+        title="🧭 Panel",
+        description=f"{clock(health['last_scan'])} · modo {mode} · {esc(health['feed'])}",
         color=RED if ks_active else BLUE,
         timestamp=datetime.now(UTC),
     )
     for symbol, a in analyses.items():
         digits = cfg.instrument(symbol).digits
-        header = f"Precio {price(a.quote[0], digits)}\n" if a.quote else ""
-        line = (
-            "sin entradas activas"
-            if not a.signals
-            else "\n".join(
-                f"{'✅' if s.emit else '⛔'} {s.side} {s.tf} · prob. TP1 {pct(s.p_tp1)}" for s in a.signals[:3]
-            )
-        )
-        _add(embed, f"{symbol}", f"{header}{_bias_line(a)}\n{line}", True)
+        head = f"**{price(a.quote[0], digits)}**\n" if a.quote else ""
+        setups = [f"{'✅' if s.emit else '⛔'} {s.side} {s.tf} · {pct(s.p_tp1)}" for s in a.signals[:2]]
+        body = "\n".join(setups) if setups else "sin entradas"
+        _add(embed, symbol, f"{head}{_bias_line(a)}\n{body}", True)
     if not open_signals.empty:
         rows = []
         for _, s in open_signals.iterrows():
             digits = cfg.instrument(s["symbol"]).digits
             side = "COMPRA" if s["direction"] > 0 else "VENTA"
             now_r = (r_by_key or {}).get(s["key"])
-            extra = f" · ahora **{now_r:+.2f}R**" if now_r is not None else ""
+            extra = f" · **{now_r:+.2f}R**" if now_r is not None else ""
             tp1 = " · TP1 ✅" if s["tp1_notified"] else ""
-            rows.append(f"• {side} {s['symbol']} {s['tf']} desde {price(s['entry'], digits)}{extra}{tp1}")
-        _add(embed, f"📌 Señales abiertas ({len(open_signals)})", "\n".join(rows))
+            rows.append(f"{side} {s['symbol']} {s['tf']} desde {price(s['entry'], digits)}{extra}{tp1}")
+        _add(embed, f"📌 Abiertas ({len(open_signals)})", "\n".join(rows))
     else:
-        _add(embed, "📌 Señales abiertas", "Ninguna.")
+        _add(embed, "📌 Abiertas", "Ninguna.")
     if ks_active:
-        _add(embed, "🔴 Interruptor de seguridad ACTIVO", f"{esc(ks_reason)}\nNo se emiten señales. Usa `/reactivar`.")
-    _add(embed, "Comandos", "`/analisis` `/senales` `/stats` `/validacion` `/riesgo` `/estado` `/ayuda`")
+        _add(embed, "🔴 Interruptor de seguridad", f"{esc(ks_reason)}\nNo se emiten señales. `/reactivar`.")
     return embed
 
 
@@ -389,110 +346,102 @@ def open_signals_embed(
 ) -> discord.Embed:
     if open_signals.empty:
         return discord.Embed(
-            title="📌 Señales abiertas",
-            description="Ninguna. Te aviso en cuanto un setup cumpla todas las condiciones.",
+            title="📌 Sin señales abiertas",
+            description="Te aviso en cuanto un setup cumpla todas las condiciones.",
             color=GREY,
         )
-    embed = discord.Embed(title=f"📌 Señales abiertas ({len(open_signals)})", color=BLUE, timestamp=datetime.now(UTC))
+    embed = discord.Embed(title=f"📌 Abiertas ({len(open_signals)})", color=BLUE, timestamp=datetime.now(UTC))
     for _, s in open_signals.iterrows():
         digits = cfg.instrument(s["symbol"]).digits
         side = "COMPRA" if s["direction"] > 0 else "VENTA"
         now_r = (r_by_key or {}).get(s["key"])
         value = (
-            f"entrada `{price(s['entry'], digits)}` · stop `{price(s['stop'], digits)}`\n"
-            f"TP1 `{price(s['tp1'], digits)}` · TP2 `{price(s['tp2'], digits)}`\n"
-            f"prob. TP1 {pct(s['p_tp1'])} · abierta desde {when(s['signal_time'])}"
+            f"```\nEntrada {price(s['entry'], digits)}\n"
+            f"SL      {price(s['stop'], digits)}\n"
+            f"TP1     {price(s['tp1'], digits)}\n"
+            f"TP2     {price(s['tp2'], digits)}\n```"
         )
-        if now_r is not None:
-            value += f"\nAhora mismo: **{now_r:+.2f}R**"
+        extra = f"**{now_r:+.2f}R** ahora · " if now_r is not None else ""
+        extra += f"TP1 {pct(s['p_tp1'])} · desde {when(s['signal_time'])}"
         if s["tp1_notified"]:
-            value += "\n✅ TP1 tocado: mitad cerrada y stop en la entrada"
-        _add(embed, f"{'🟢' if s['direction'] > 0 else '🔴'} {side} {s['symbol']} {s['tf']}", value)
+            extra += "\n✅ TP1 tocado: mitad cerrada, stop en la entrada"
+        _add(embed, f"{'🟢' if s['direction'] > 0 else '🔴'} {side} {s['symbol']} {s['tf']}", value + extra)
     return _disclaimer(embed, cfg)
 
 
 def stats_embed(closed: pd.DataFrame, scoreboard: pd.DataFrame, period_label: str, cfg: AppConfig) -> discord.Embed:
     if closed.empty:
-        embed = discord.Embed(
-            title=f"📊 Resultados reales — {period_label}",
-            description="Sin señales cerradas en este periodo todavia.",
-            color=GREY,
+        return _disclaimer(
+            discord.Embed(
+                title=f"📊 Resultados — {period_label}",
+                description="Sin señales cerradas en este periodo todavia.",
+                color=GREY,
+            ),
+            cfg,
         )
-        return _disclaimer(embed, cfg)
     r = closed["realized_r"].astype(float)
     equity = r.cumsum()
     drawdown = float((equity.cummax().clip(lower=0) - equity).max())
     embed = discord.Embed(
-        title=f"📊 Resultados reales — {period_label}",
-        description=f"Seguimiento en papel de {len(closed)} señales cerradas, con las reglas del plan.",
+        title=f"📊 Resultados — {period_label}",
+        description=f"**{r.mean():+.2f}R** por señal · total {r.sum():+.1f}R · {len(closed)} cerradas "
+        f"(seguimiento en papel)",
         color=GREEN if r.mean() > 0 else RED,
         timestamp=datetime.now(UTC),
     )
-    _add(embed, "Expectativa", f"**{r.mean():+.2f}R** por señal\nTotal {r.sum():+.1f}R", True)
     _add(
         embed,
         "Acierto",
-        f"TP1 {pct(closed['hit_tp1'].mean())} (el modelo predijo {pct(closed['p_tp1'].astype(float).mean())})\n"
-        f"TP2 {pct(closed['hit_tp2'].mean())}\nGanadoras {pct((r > 0).mean())}",
-        True,
+        f"TP1 {pct(closed['hit_tp1'].mean())} (modelo: {pct(closed['p_tp1'].astype(float).mean())})\n"
+        f"TP2 {pct(closed['hit_tp2'].mean())} · ganadoras {pct((r > 0).mean())} · peor racha {drawdown:.1f}R",
     )
-    _add(embed, "Peor racha", f"{drawdown:.1f}R", True)
     by_group = closed.groupby(["symbol", "tf"])["realized_r"].agg(["count", "mean"])
     _add(
         embed,
-        "Por instrumento y temporalidad",
-        "\n".join(
-            f"• {sym} {tf}: {int(row['count'])} señales, {row['mean']:+.2f}R" for (sym, tf), row in by_group.iterrows()
-        ),
+        "Por grupo",
+        "\n".join(f"{sym} {tf}: {int(row['count'])} · {row['mean']:+.2f}R" for (sym, tf), row in by_group.iterrows()),
     )
     if not scoreboard.empty:
-        diff = (scoreboard["r_at_advice"].astype(float) - scoreboard["realized_r"].astype(float)).mean()
-        verdict = (
-            "habrian ayudado" if diff > 0.05 else ("habrian dado igual" if abs(diff) <= 0.05 else "habrian restado")
-        )
+        advice_r = scoreboard["r_at_advice"].astype(float).mean()
+        plan_r = scoreboard["realized_r"].astype(float).mean()
+        diff = advice_r - plan_r
+        verdict = "ayudan" if diff > 0.05 else ("dan igual" if abs(diff) <= 0.05 else "restan")
         _add(
             embed,
-            "🚨 Avisos de gestion, a toro pasado",
-            f"{len(scoreboard)} señales con aviso.\n"
-            f"Cerrar en el aviso: **{scoreboard['r_at_advice'].astype(float).mean():+.2f}R** de media.\n"
-            f"Seguir el plan: **{scoreboard['realized_r'].astype(float).mean():+.2f}R**.\n"
-            f"Es decir, {verdict} ({diff:+.2f}R).",
+            "🚨 Avisos de cierre",
+            f"{len(scoreboard)} con aviso · cerrar ahi {advice_r:+.2f}R vs plan {plan_r:+.2f}R → **{verdict}**",
         )
     if len(closed) < 30:
-        _add(
-            embed,
-            "⚠️ Ojo con estos numeros",
-            f"Con {len(closed)} señales cualquier cifra es sobre todo ruido. Hacen falta decenas para juzgar nada.",
-        )
+        _add(embed, "⚠️ Ojo", f"Con {len(closed)} señales esto es sobre todo ruido.")
     return _disclaimer(embed, cfg)
 
 
 def validation_embed(validation: dict | None, cfg: AppConfig) -> discord.Embed:
     if not validation:
         return discord.Embed(
-            title="🧪 Validacion",
-            description="Aun no hay validacion. Ejecuta en el PC: `python -m finance_bot research`",
+            title="🧪 Sin validacion",
+            description="Ejecuta en el PC del bot: `python -m finance_bot research`",
             color=AMBER,
         )
     selection = validation.get("selection", {})
     embed = discord.Embed(
         title="🧪 Validacion fuera de muestra",
-        description=f"Generada {esc(str(validation.get('generated_at', 'n/d'))[:16])} · test reservado evaluado: "
+        description=f"{esc(str(validation.get('generated_at', 'n/d'))[:10])} · test reservado evaluado: "
         f"{'si' if validation.get('test_evaluated') else 'no'}",
         color=GREEN if selection else AMBER,
     )
     if selection:
         _add(
             embed,
-            "✅ Con ventaja validada (emiten en modo estricto)",
-            "\n".join(f"• {esc(k)} → plan «{esc(v)}»" for k, v in sorted(selection.items())),
+            "✅ Con ventaja validada",
+            "\n".join(f"{esc(k)} → «{esc(v)}»" for k, v in sorted(selection.items())),
         )
     else:
         _add(
             embed,
             "Ninguna combinacion supero la validacion",
-            "Despues de costes, ninguna combinacion de instrumento, temporalidad y plan demostro ventaja. "
-            "En modo estricto el bot NO emite señales de entrada; `/analisis` sigue enseñando todo lo que ve.",
+            "Despues de costes no se demostro ventaja en ningun instrumento, temporalidad ni plan. En modo estricto "
+            "el bot no emite señales; `/analisis` sigue enseñando todo lo que ve.",
         )
     for plan, info in validation.get("plans", {}).items():
         rows = []
@@ -502,49 +451,36 @@ def validation_embed(validation: dict | None, cfg: AppConfig) -> discord.Embed:
                 continue
             mean_r = summary.get("mean_r")
             rows.append(
-                f"• {esc(key)}: {summary['n']} señales, TP1 {pct(summary.get('tp1_rate'))}, "
+                f"{esc(key)}: {summary['n']} · TP1 {pct(summary.get('tp1_rate'))} · "
                 f"{'n/d' if mean_r is None else f'{mean_r:+.3f}R'}{' ✅' if g.get('eligible') else ''}"
             )
         if rows:
-            _add(embed, f"Plan {plan} · umbral {pct(info.get('threshold_tp1'))}", "\n".join(rows))
-    embed.set_footer(text="Informe completo: docs/validacion_2026-09-22.md y reports/latest.md en el PC del bot.")
+            _add(embed, f"{plan} · umbral {pct(info.get('threshold_tp1'))}", "\n".join(rows))
+    embed.set_footer(text="Informe completo: docs/validacion_2026-09-22.md")
     return embed
 
 
 def status_embed(health: dict, cfg: AppConfig) -> discord.Embed:
     ks_active, ks_reason = health["kill_switch"]
+    model = health.get("model")
     embed = discord.Embed(
-        title="🩺 Estado del sistema",
+        title="🩺 Estado",
+        description=f"{esc(health['feed'])} · ultimo escaneo {clock(health['last_scan'])} · "
+        f"modo {'estricto' if health['mode'] == 'strict' else 'informativo'}",
         color=RED if ks_active or health.get("last_error") else GREEN,
         timestamp=datetime.now(UTC),
     )
-    _add(embed, "Fuente de datos", esc(health["feed"]), True)
-    _add(embed, "Ultimo escaneo", when(health["last_scan"]) if health["last_scan"] else "aun ninguno", True)
-    _add(embed, "Modo", ("estricto" if health["mode"] == "strict" else "informativo"), True)
     _add(embed, "Señales abiertas", str(health["open_signals"]), True)
-    _add(
-        embed,
-        "Interruptor de seguridad",
-        ("🔴 ACTIVO — " + esc(ks_reason) if ks_active else "🟢 inactivo"),
-        True,
-    )
-    _add(embed, "Calendario economico", "OK" if health["calendar_ok"] else "⚠️ no disponible", True)
-    model = health.get("model")
-    _add(
-        embed,
-        "Modelo",
-        f"entrenado {esc(str(model['trained_at'])[:16])}"
-        if model
-        else "⚠️ sin entrenar (`python -m finance_bot research`)",
-    )
+    _add(embed, "Interruptor", "🔴 ACTIVO" if ks_active else "🟢 inactivo", True)
+    _add(embed, "Calendario", "OK" if health["calendar_ok"] else "⚠️ no disponible", True)
+    _add(embed, "Modelo", f"entrenado {esc(str(model['trained_at'])[:10])}" if model else "⚠️ sin entrenar")
     _add(
         embed,
         "Datos",
-        "\n".join(
-            f"• {symbol}: completos hasta {when(d['complete_until']) if d['complete_until'] is not None else 'n/d'}"
-            for symbol, d in health["data"].items()
-        ),
+        "\n".join(f"{symbol}: hasta {clock(d['complete_until'])}" for symbol, d in health["data"].items()),
     )
+    if ks_active:
+        _add(embed, "🔴 Motivo del interruptor", esc(ks_reason))
     if health.get("last_error"):
         _add(embed, "⚠️ Ultimo error", esc(health["last_error"]))
     return embed
@@ -553,56 +489,39 @@ def status_embed(health: dict, cfg: AppConfig) -> discord.Embed:
 def calendar_embed(events: list, cfg: AppConfig, failed: bool = False) -> discord.Embed:
     if failed:
         return discord.Embed(
-            title="📅 Calendario economico",
-            description="⚠️ El feed gratuito no responde ahora mismo. No invento que no haya noticias: vuelve a "
-            "intentarlo en unos minutos.",
+            title="📅 Calendario no disponible",
+            description="El feed gratuito no responde. No invento que no haya noticias: intentalo en unos minutos.",
             color=AMBER,
         )
     if not events:
         return discord.Embed(
-            title="📅 Calendario economico",
-            description="Sin noticias de alto impacto USD/EUR en los proximos dias.",
+            title="📅 Sin noticias de alto impacto",
+            description="Nada relevante de USD/EUR en los proximos dias.",
             color=GREY,
         )
-    embed = discord.Embed(title="📅 Alto impacto USD/EUR", color=BLUE)
-    for event in events[:20]:
-        _add(
-            embed,
-            f"{esc(event.currency)} · {when(event.time)}",
-            esc(event.title) + (f"\nPrevision: {esc(event.forecast)}" if event.forecast else ""),
-            True,
-        )
-    return embed
+    lines = [f"`{when(e.time)}` {esc(e.currency)} — {esc(e.title)}" for e in events[:15]]
+    return discord.Embed(title="📅 Alto impacto USD/EUR", description="\n".join(lines)[:4000], color=BLUE)
 
 
 def help_embed(cfg: AppConfig, validated: int, model_ready: bool) -> discord.Embed:
     embed = discord.Embed(
-        title="🤖 Como funciona este bot",
-        description=(
-            f"Vigila **{' y '.join(cfg.instruments)}** en M15, H1, H4 y D1, siempre sobre velas ya cerradas.\n"
-            "20 estrategias votan, 8 estrategias buscan el momento de entrada y un modelo calibrado con "
-            "historico fuera de muestra estima la probabilidad real de cada objetivo."
-        ),
+        title="🤖 Como funciona",
+        description=f"Vigila **{' y '.join(cfg.instruments)}** en M15, H1, H4 y D1 sobre velas cerradas. "
+        "20 estrategias votan, 8 buscan la entrada y un modelo calibrado fuera de muestra estima la "
+        "probabilidad real de cada objetivo.",
         color=BLUE,
     )
     _add(
         embed,
-        "Cuando te avisa",
-        "Solo si se cumple TODO: combinacion validada, probabilidad sobre el umbral, expectativa positiva en casos "
-        "parecidos, casos suficientes, sin noticia fuerte encima y aviso a tiempo.",
-    )
-    _add(
-        embed,
-        "Mientras la operacion vive",
-        "Te avisa al tocar TP1 (cierra la mitad y stop a la entrada), al cerrarse, y **si ve motivo para cerrar "
-        "antes**: giro del contexto, entrada contraria, noticia encima, se acaba el tiempo o estas devolviendo "
-        "beneficio. Esos avisos son contexto, no forman parte de lo validado.",
+        "Te escribe solo",
+        "Señal nueva (con zona de entrada, SL y TP1/TP2/TP3), aviso al tocar TP1, al cerrarse, y **si ve motivo "
+        "para cerrar antes**: giro del contexto, entrada contraria, noticia encima, se acaba el tiempo o devuelves "
+        "beneficio.",
     )
     _add(
         embed,
         "Comandos",
-        "`/analisis` todo lo que ve · `/senales` abiertas · `/stats` resultados reales\n"
-        "`/validacion` que tiene ventaja demostrada · `/riesgo` calculadora de lotes · `/calendario` noticias\n"
+        "`/analisis` `/senales` `/stats` `/validacion` `/riesgo` `/calendario`\n"
         "`/capital` `/riesgo_pct` `/modo` `/silenciar` `/estado` `/reactivar` `/panel`",
     )
     if not model_ready:
@@ -610,10 +529,10 @@ def help_embed(cfg: AppConfig, validated: int, model_ready: bool) -> discord.Emb
     elif validated == 0:
         _add(
             embed,
-            "⚠️ Lo que debes saber",
-            "Ninguna combinacion supero la validacion fuera de muestra: despues de costes no se encontro ventaja. "
-            "En modo estricto NO recibiras señales de entrada. `/validacion` tiene los numeros y `/modo informativo` "
-            "enseña los setups marcados como no validados.",
+            "⚠️ Importante",
+            "Ninguna combinacion supero la validacion: despues de costes no se encontro ventaja. En modo estricto "
+            "**no recibiras señales de entrada**. `/validacion` tiene los numeros; `/modo informativo` las enseña "
+            "igualmente, marcadas como no validadas.",
         )
     return _disclaimer(embed, cfg)
 

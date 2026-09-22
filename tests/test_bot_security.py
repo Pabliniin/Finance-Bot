@@ -89,3 +89,18 @@ def test_blank_optional_values_in_env_do_not_break_startup() -> None:
     """El .env se rellena a mano: los opcionales se quedan vacios."""
     secrets = Secrets(discord_bot_token="x", discord_guild_id="", discord_channel_id="", mt5_login="")
     assert secrets.discord_guild_id == 0 and secrets.discord_channel_id == 0 and secrets.mt5_login == 0
+
+
+def test_logging_survives_without_console(monkeypatch, tmp_path) -> None:
+    """La tarea programada arranca con pythonw.exe: sin consola, sys.stderr es
+    None y un handler de consola reventaria en cada linea."""
+    import logging
+
+    from finance_bot import logging_setup
+
+    monkeypatch.setattr(logging_setup.sys, "stderr", None)
+    monkeypatch.setattr(logging_setup, "PROJECT_ROOT", tmp_path)
+    logging_setup.setup_logging("prueba")
+    handlers = logging.getLogger().handlers
+    assert handlers and not any(type(h) is logging.StreamHandler for h in handlers)
+    logging.getLogger(__name__).info("no debe fallar")

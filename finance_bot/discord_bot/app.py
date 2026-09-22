@@ -73,6 +73,7 @@ class FinanceBot(discord.Client):
         self.last_data_error: str | None = None
         self._ready_once = False
         self._panel_lock = asyncio.Lock()
+        self._presence_index = -1
 
     # --- utilidades -------------------------------------------------------------
 
@@ -210,26 +211,30 @@ class FinanceBot(discord.Client):
                     out[str(s["key"])] = value
         return out
 
-    async def build_panel(self) -> discord.Embed:
+    async def build_panel(self, open_signals: Any = None, r_by_key: dict[str, float] | None = None) -> discord.Embed:
+        """Con los datos ya calculados por el escaneo no se repite el trabajo."""
         service = self.service
-        open_signals = await self.run_blocking(service.tracker.open_signals)
+        if open_signals is None:
+            open_signals = await self.run_blocking(service.tracker.open_signals)
+        if r_by_key is None:
+            r_by_key = await self.r_by_key(open_signals)
         health = await self.run_blocking(service.health)
-        return embeds.panel_embed(
-            service.latest_analyses, open_signals, health, service.cfg, await self.r_by_key(open_signals)
-        )
+        return embeds.panel_embed(service.latest_analyses, open_signals, health, service.cfg, r_by_key)
 
-    async def update_panel(self, force_new: bool = False) -> None:
+    async def update_panel(
+        self, force_new: bool = False, open_signals: Any = None, r_by_key: dict[str, float] | None = None
+    ) -> None:
         """Un unico mensaje fijo con el estado. Se edita, no se repite.
 
         El cerrojo evita el caso real de arrancar y escanear a la vez: sin el,
         las dos llamadas leen "no hay panel" y crean uno cada una."""
         async with self._panel_lock:
-            await self._update_panel(force_new)
+            await self._update_panel(force_new, open_signals, r_by_key)
 
-    async def _update_panel(self, force_new: bool) -> None:
+    async def _update_panel(self, force_new: bool, open_signals: Any, r_by_key: dict[str, float] | None) -> None:
         if self.channel is None:
             return
-        embed = await self.build_panel()
+        embed = await self.build_panel(open_signals, r_by_key)
         view = panel_view(list(self.service.cfg.instruments))
         stored = self.service.tracker.get_setting(PANEL_SETTING)
         if stored and not force_new:
@@ -309,9 +314,42 @@ class FinanceBot(discord.Client):
         scoreboard = await self.run_blocking(self.service.tracker.advice_scoreboard)
         return embeds.stats_embed(closed, scoreboard, period, self.service.cfg)
 
+    # --- estado del bot en Discord -----------------------------------------------
+
+    def _presence_texts(self, open_signals: Any, r_by_key: dict[str, float]) -> list[str]:
+        """Frases cortas que van rotando bajo el nombre del bot."""
+        texts: list[str] = []
+        for symbol, analysis in self.service.latest_analyses.items():
+            digits = self.service.cfg.instrument(symbol).digits
+            short = symbol.replace("USD", "") if symbol != "EURUSD" else "EUR"
+            if analysis.quote:
+                texts.append(f"{short} {embeds.price(analysis.quote[0], digits)}")
+            main = analysis.views.get("H1") or next(iter(analysis.views.values()), None)
+            if main is not None:
+                texts.append(f"{short} {main.tf} {main.bias} ({main.score:+d})")
+        if open_signals is not None and not open_signals.empty:
+            total = sum(r_by_key.values()) if r_by_key else None
+            resume = f"{len(open_signals)} abierta(s)"
+            if total is not None and r_by_key:
+                resume += f" · {total:+.1f}R"
+            texts.append(resume)
+        else:
+            texts.append("sin señales abiertas")
+        if self.service.last_scan:
+            texts.append(f"ultimo vistazo {embeds.clock(self.service.last_scan)}")
+        return texts or ["vigilando el mercado"]
+
+    async def update_presence(self, open_signals: Any = None, r_by_key: dict[str, float] | None = None) -> None:
+        texts = self._presence_texts(open_signals, r_by_key or {})
+        self._presence_index = (self._presence_index + 1) % len(texts)
+        try:
+            await self.change_presence(activity=discord.CustomActivity(name=texts[self._presence_index][:128]))
+        except discord.HTTPException:
+            logger.debug("no se pudo actualizar el estado", exc_info=True)
+
     # --- tareas periodicas -------------------------------------------------------
 
-    @tasks.loop(minutes=5)
+    @tasks.loop(minutes=1)
     async def scan_loop(self) -> None:
         service = self.service
         try:
@@ -348,7 +386,29 @@ class FinanceBot(discord.Client):
                 )
             else:
                 await self.send(embeds.simple_embed("✅ Datos recuperados", "El escaneo vuelve a la normalidad."))
-        await self.update_panel()
+        open_signals = await self.run_blocking(service.tracker.open_signals)
+        r_by_key = await self.r_by_key(open_signals)
+        await self.update_panel(open_signals=open_signals, r_by_key=r_by_key)
+        await self.update_presence(open_signals, r_by_key)
+        self._adjust_cadence()
+
+    def _adjust_cadence(self) -> None:
+        """Con MT5 se mira el mercado cada minuto. Con el respaldo gratuito de
+        Dukascopy se espacia: sus datos llegan con retraso y no hay que
+        castigar un servidor publico pidiendo lo mismo sesenta veces por hora."""
+        realtime = bool(self.service.feed and self.service.feed.realtime)
+        wanted = (
+            self.service.cfg.schedule.scan_every_minutes
+            if realtime
+            else max(3, self.service.cfg.schedule.scan_every_minutes)
+        )
+        if self.scan_loop.minutes != wanted:
+            logger.info(
+                "Cadencia de escaneo: cada %d min (fuente %s)",
+                wanted,
+                self.service.feed.name if self.service.feed else "?",
+            )
+            self.scan_loop.change_interval(minutes=wanted)
 
     @tasks.loop(time=time(21, 30, tzinfo=UTC))
     async def daily_loop(self) -> None:

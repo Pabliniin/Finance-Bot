@@ -88,7 +88,7 @@ research:
   significance_alpha: 0.05
 
 schedule:
-  scan_every_minutes: 3          # cada temporalidad se evalua al cierre de su vela; esto marca
+  scan_every_minutes: 1          # cada temporalidad se evalua al cierre de su vela; esto marca
                                  # lo rapido que reacciona a TP1, stops y avisos de cierre
   daily_report_utc: "21:30"
   weekly_report_weekday: 6       # domingo (lunes=0)
@@ -103,3 +103,7 @@ disclaimer: >-
   Estimacion estadistica basada en historico fuera de muestra, no una garantia.
   No es asesoramiento financiero. Rendimientos pasados no garantizan resultados
   futuros. Tu decides y ejecutas; el bot nunca opera por ti.
+
+disclaimer_short: >-
+  Estimacion estadistica, no una garantia · No es asesoramiento financiero ·
+  Tu decides y ejecutas

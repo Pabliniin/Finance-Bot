@@ -247,6 +247,7 @@ class Tracker:
                         "tf": tf,
                         "direction": int(sig["direction"]),
                         "hours": float(label["hours_to_tp1"]),
+                        "partial": float(plan.partial),
                     }
                 )
         return events

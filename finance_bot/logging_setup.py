@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 from logging.handlers import RotatingFileHandler
 
 from finance_bot.config import PROJECT_ROOT
@@ -17,9 +18,12 @@ def setup_logging(name: str, level: int = logging.INFO) -> None:
     for handler in list(root.handlers):
         root.removeHandler(handler)
 
-    console = logging.StreamHandler()
-    console.setFormatter(fmt)
-    root.addHandler(console)
+    # Sin consola (pythonw.exe, como lo arranca la tarea programada) sys.stderr
+    # es None: el handler de consola fallaria en cada linea. Solo fichero.
+    if sys.stderr is not None:
+        console = logging.StreamHandler()
+        console.setFormatter(fmt)
+        root.addHandler(console)
 
     file_handler = RotatingFileHandler(log_dir / f"{name}.log", maxBytes=2_000_000, backupCount=5, encoding="utf-8")
     file_handler.setFormatter(fmt)

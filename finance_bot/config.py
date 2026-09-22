@@ -145,6 +145,9 @@ class AppConfig(BaseModel):
     schedule: ScheduleConfig
     risk: RiskConfig
     disclaimer: str
+    # Version corta para el pie de cada mensaje de Discord (los mensajes tienen
+    # que poder leerse de un vistazo, pero sin perder el aviso).
+    disclaimer_short: str = "Estimacion estadistica, no una garantia · No es asesoramiento financiero · Tu ejecutas"
 
     @field_validator("timeframes")
     @classmethod

@@ -55,7 +55,8 @@ def test_signal_respects_discord_limits(cfg) -> None:
 
 def test_every_signal_carries_the_disclaimer(cfg) -> None:
     embed = embeds.signal_embed(_signal(), cfg)
-    assert embed.footer.text and cfg.disclaimer.split(".")[0] in embed.footer.text
+    footer = (embed.footer.text or "").lower()
+    assert "no es asesoramiento" in footer and "garantia" in footer
 
 
 def test_exit_advice_says_it_is_not_validated(cfg) -> None:
@@ -145,9 +146,16 @@ def test_signal_shows_entry_zone_and_every_target(cfg) -> None:
     assert "4,336.90 – 4,341.00" in text  # rango, no un unico precio
     assert "TP1" in text and "TP2" in text and "TP3" in text and "SL" in text
     assert "4,402.50" in text  # TP3 = entrada + 3R
-    assert "fuera del plan validado" in text  # el extra queda marcado
+    assert "extra, no validado" in text  # el objetivo de mas queda marcado
 
 
 def test_signal_without_zone_falls_back_to_one_price(cfg) -> None:
-    text = embeds.to_text(embeds.signal_embed(_signal(entry_low=None, entry_high=None), cfg))
-    assert "–" not in text.split("Objetivos")[0]
+    text = embeds.to_text(embeds.signal_embed(_signal(entry=100.0, entry_low=None, entry_high=None), cfg))
+    assert "Zona  100.00" in text and "–" not in text
+
+
+def test_signal_message_stays_short(cfg) -> None:
+    """Tiene que leerse de un vistazo en el movil, no ser un ladrillo."""
+    embed = embeds.signal_embed(_signal(ladder=_ladder()), cfg)
+    assert len(embed.fields) <= 6
+    assert len(embeds.to_text(embed)) < 1200
