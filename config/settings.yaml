@@ -4,7 +4,8 @@
 account:
   capital_eur: 250          # capital de referencia para calcular el tamaño de posicion
   risk_pct: 5.0             # % del capital arriesgado por operacion (tu maximo declarado)
-  max_open_signals: 3       # señales abiertas simultaneas como maximo (todas las temporalidades)
+  max_open_signals: 6            # señales abiertas a la vez (seguimiento en papel). Con 3, una de H4/D1
+                                 # bloqueaba durante dias las de M15/H1. Tu decides cuales tomar
 
 # Costes de trading. Valores por defecto CONSERVADORES aproximados a una cuenta
 # XM Standard. Si tu cuenta es otra (Ultra Low, Zero...) cambialos: con costes

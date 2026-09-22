@@ -180,7 +180,7 @@ def signal_embed(s: Signal, cfg: AppConfig) -> discord.Embed:
             "\n".join(f"{esc(e.currency)} {esc(e.title)} — {when(e.time)}" for e in s.news[:3]),
         )
     if s.warnings:
-        _add(embed, "⚠️ Ojo", "\n".join(f"• {esc(w)}" for w in s.warnings[:3]))
+        _add(embed, "⚠️ Ojo", "\n".join(f"• {esc(w)}" for w in s.warnings[:5]))
     return _disclaimer(embed, cfg)
 
 

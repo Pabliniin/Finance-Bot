@@ -244,6 +244,8 @@ Discord te los ofrece con su descripción.
 | `/calendario` | Noticias de alto impacto USD/EUR de los próximos días |
 | `/capital` · `/riesgo_pct` | Tu capital y tu riesgo por operación |
 | `/modo` | Estricto (solo lo validado) o informativo (también setups sin ventaja, marcados con ⚠️) |
+| `/seguir` | Vigila una operación tuya (instrumento, compra/venta, entrada, stop) y te avisa al tocar TP1, al cerrarse y cuando convenga salir antes |
+| `/dejar` | Deja de vigilar tus operaciones manuales |
 | `/silenciar` | Silencia un instrumento unas horas |
 | `/estado` | Salud del sistema: datos, fuente, modelo, interruptor de seguridad |
 | `/reactivar` | Reactiva el bot tras el interruptor de seguridad (después de revisarlo) |

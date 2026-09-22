@@ -142,3 +142,46 @@ def test_ping_follows_notification_config(cfg) -> None:
 
     bot.service.cfg = cfg.model_copy(update={"notifications": cfg.notifications.model_copy(update={"mention": "none"})})
     assert bot.ping_content() is None
+
+
+def test_scan_loop_survives_any_exception(cfg, monkeypatch) -> None:
+    """tasks.loop mata el bucle ante una excepcion no capturada: un bot que
+    parece vivo y no hace nada. El envoltorio tiene que tragarsela."""
+    import asyncio
+    from datetime import UTC, datetime, timedelta
+
+    bot = _bot(cfg, {111})
+
+    async def boom() -> None:
+        raise RuntimeError("algo inesperado")
+
+    monkeypatch.setattr(bot, "_scan_once", boom)
+    bot._last_cycle_done = datetime.now(UTC) - timedelta(hours=1)
+    asyncio.run(bot.scan_loop.coro(bot))  # no propaga
+    assert datetime.now(UTC) - bot._last_cycle_done < timedelta(seconds=5)  # y deja constancia del ciclo
+
+
+def test_watchdog_relaunches_a_dead_loop_and_restarts_a_stalled_process(cfg, monkeypatch) -> None:
+    import asyncio
+    from datetime import UTC, datetime, timedelta
+    from types import SimpleNamespace
+
+    bot = _bot(cfg, {111})
+    started: list[str] = []
+    bot.scan_loop = SimpleNamespace(is_running=lambda: False, start=lambda: started.append("start"))  # type: ignore[assignment]
+    asyncio.run(bot.watchdog_loop.coro(bot))
+    assert started == ["start"]
+
+    exited: list[int] = []
+    bot.scan_loop = SimpleNamespace(is_running=lambda: True)  # type: ignore[assignment]
+    bot._last_cycle_done = datetime.now(UTC) - bot_app.WATCHDOG_STALL - timedelta(minutes=1)
+    monkeypatch.setattr(bot, "send", lambda *a, **k: asyncio.sleep(0))
+    monkeypatch.setattr(bot_app.updater, "schedule_restart", lambda: exited.append(-1))
+    monkeypatch.setattr(bot_app.os, "_exit", lambda code: exited.append(code))
+    asyncio.run(bot.watchdog_loop.coro(bot))
+    assert exited == [-1, bot_app.updater.EXIT_RESTART]  # programa el relanzamiento y sale
+
+    exited.clear()
+    bot._last_cycle_done = datetime.now(UTC)
+    asyncio.run(bot.watchdog_loop.coro(bot))
+    assert exited == []  # con ciclos recientes no hace nada

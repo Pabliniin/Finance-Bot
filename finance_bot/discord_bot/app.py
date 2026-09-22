@@ -328,8 +328,11 @@ class FinanceBot(discord.Client):
             return embeds.simple_embed(
                 "Instrumento desconocido", f"Opciones: {', '.join(service.cfg.instruments)}", embeds.AMBER
             )
-        if not service.complete_until:
-            await self.run_blocking(service.refresh_data)
+        # Si el escaneo automatico lleva un rato sin completarse (MT5 caido, arranque),
+        # el analisis usaria velas viejas y diria "llega tarde" a todo: se refresca antes.
+        stale = service.last_scan is None or datetime.now(UTC) - service.last_scan > timedelta(minutes=3)
+        if not service.complete_until or stale:
+            await self.run_blocking(service.refresh_with_fallback)
         analysis = await self.run_blocking(service.analyze, symbol)
         return embeds.analysis_embed(analysis, service.cfg)
 
