@@ -177,14 +177,40 @@ powershell -ExecutionPolicy Bypass -File scripts\install_windows.ps1 -RegisterTa
 
 ### 3.6 Dónde dejarlo funcionando
 El bot tiene que estar encendido para vigilar el mercado, y **necesita
-MetaTrader 5, que solo existe para Windows**. Por eso el sitio natural es tu
-mini PC con Windows encendido: con la tarea programada del paso anterior,
-arranca solo y se reinicia si falla.
+MetaTrader 5, que solo existe para Windows**. Un servidor de Discord no aloja
+nada: es una sala de chat. Por eso el sitio natural es un PC con Windows que se
+quede encendido; con la tarea programada del paso anterior arranca solo y se
+reinicia si falla.
 
 Un VPS Linux barato no sirve igual: sin MT5 tendría que usar Dukascopy con 1 h
 de retraso y el bot descartaría las señales por tardías. Si algún día quieres
 un servidor 24/7 de verdad, sería un VPS **Windows** con MT5 instalado; el
 código es el mismo.
+
+### 3.7 Mover el bot a otro PC (el que se quede encendido)
+En el PC donde está ahora:
+```bash
+powershell -ExecutionPolicy Bypass -File scripts\preparar_traslado.ps1
+```
+Deja en el Escritorio `FinanceBot-traslado.zip` (~90 MB) con el código, el
+histórico ya descargado, el modelo entrenado y tu `.env`. **Ese ZIP lleva tu
+token: trátalo como una llave.**
+
+En el PC nuevo:
+1. Copia el ZIP (USB o carpeta compartida) y extráelo donde quieras.
+2. Doble clic en **INSTALAR.bat**. Instala dependencias, registra el arranque
+   automático, lanza el bot y te dice qué fuente de datos ha encontrado.
+3. Instala MetaTrader 5 y entra **una vez** en tu cuenta demo marcando *Guardar
+   datos de la cuenta*. A partir de ahí el bot abre el terminal él solo.
+
+Si el bot arranca antes de que MT5 esté listo, no se queda colgado con datos
+retrasados: reintenta cada 10 minutos y se pasa a tiempo real en cuanto puede.
+
+Cuando el bot esté funcionando en el PC nuevo, apaga el viejo o desactiva ahí la
+tarea para no tener dos bots escribiendo a la vez:
+```bash
+powershell -Command "Unregister-ScheduledTask -TaskName FinanceBot -Confirm:$false"
+```
 
 ---
 
@@ -252,7 +278,18 @@ esté activo no se emiten señales nuevas. **Nunca se reactiva solo**: `/reactiv
   sobreajuste.
 - Si tu cuenta no es XM Standard, ajusta spread y swap en `config/settings.yaml`.
 
-## 6. Limitaciones que debes conocer
+## 6. Enlaces legales (portal de Discord)
+El portal rechaza las URL `.md` de GitHub, asi que los documentos estan tambien
+en HTML y publicados:
+
+- Terminos: <https://raw.githack.com/Pabliniin/Finance-Bot/main/docs/terminos-de-servicio.html>
+- Privacidad: <https://raw.githack.com/Pabliniin/Finance-Bot/main/docs/politica-de-privacidad.html>
+
+Si prefieres una direccion propia, activa GitHub Pages (Settings -> Pages ->
+Deploy from a branch -> `main` -> carpeta `/docs`) y quedan como
+`https://pabliniin.github.io/Finance-Bot/terminos-de-servicio.html`.
+
+## 7. Limitaciones que debes conocer
 - El histórico es de Dukascopy; en vivo, con MT5, los precios son los de tu broker. La diferencia es pequeña pero existe.
 - El filtro de noticias solo se aplica en vivo: no hay calendario histórico gratuito, así que el backtest no lo incluye.
 - M15 solo tiene histórico desde 2021 y, por tanto, menos casos.
