@@ -72,6 +72,7 @@ class FinanceBot(discord.Client):
         self.channel: discord.TextChannel | None = None
         self.last_data_error: str | None = None
         self._ready_once = False
+        self._panel_lock = asyncio.Lock()
 
     # --- utilidades -------------------------------------------------------------
 
@@ -218,7 +219,14 @@ class FinanceBot(discord.Client):
         )
 
     async def update_panel(self, force_new: bool = False) -> None:
-        """Un unico mensaje fijo con el estado. Se edita, no se repite."""
+        """Un unico mensaje fijo con el estado. Se edita, no se repite.
+
+        El cerrojo evita el caso real de arrancar y escanear a la vez: sin el,
+        las dos llamadas leen "no hay panel" y crean uno cada una."""
+        async with self._panel_lock:
+            await self._update_panel(force_new)
+
+    async def _update_panel(self, force_new: bool) -> None:
         if self.channel is None:
             return
         embed = await self.build_panel()
