@@ -12,14 +12,17 @@ build/
 .coverage
 htmlcov/
 *.log
-reports/
+logs/
 
-# Datos y caches locales (nunca versionar precios/credenciales)
-data_cache/
+# Datos de mercado (se regeneran con `python -m finance_bot download`) y estado local
+data/
 *.parquet
-*.db
 *.sqlite3
-postgres_data/
+*.tmp
+
+# Artefactos generados por `python -m finance_bot research`
+models/
+reports/
 
 .idea/
 .vscode/

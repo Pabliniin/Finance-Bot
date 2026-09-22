@@ -1,0 +1,105 @@
+# Configuracion NO sensible del bot. Los secretos (token de Discord, ids
+# autorizados, credenciales de MT5) viven en .env, nunca aqui.
+
+account:
+  capital_eur: 250          # capital de referencia para calcular el tamaño de posicion
+  risk_pct: 5.0             # % del capital arriesgado por operacion (tu maximo declarado)
+  max_open_signals: 3       # señales abiertas simultaneas como maximo (todas las temporalidades)
+
+# Costes de trading. Valores por defecto CONSERVADORES aproximados a una cuenta
+# XM Standard. Si tu cuenta es otra (Ultra Low, Zero...) cambialos: con costes
+# optimistas cualquier backtest parece mejor de lo que es. Con MT5 conectado el
+# bot muestra ademas el spread real del momento en cada señal.
+instruments:
+  XAUUSD:
+    digits: 2
+    contract_size: 100          # onzas por lote estandar
+    dukascopy_divisor: 1000
+    spread: {kind: pct, value: 0.016}        # % del precio (~0.69 USD con el oro a 4300)
+    slippage: {kind: pct, value: 0.004}      # % del precio, aplicado al entrar y en los stops
+    swap_per_night: {long: -0.55, short: -0.10}   # USD por onza y noche (x3 los miercoles)
+    min_lot: 0.01
+    lot_step: 0.01
+  EURUSD:
+    digits: 5
+    contract_size: 100000
+    dukascopy_divisor: 100000
+    spread: {kind: abs, value: 0.00014}      # 1.4 pips
+    slippage: {kind: abs, value: 0.00002}    # 0.2 pips
+    swap_per_night: {long: -0.00008, short: -0.00001}
+    min_lot: 0.01
+    lot_step: 0.01
+
+# Temporalidades analizadas y plan de operacion por temporalidad.
+#  - max_bars: cierre por tiempo si no se toca ni stop ni objetivos (acota la duracion)
+#  - sl_atr_min / sl_atr_max: el stop se coloca bajo/sobre la estructura reciente,
+#    pero nunca a menos de sl_atr_min ni a mas de sl_atr_max ATR del precio
+timeframes:
+  M15: {max_bars: 32, sl_atr_min: 1.0, sl_atr_max: 2.5, swing_lookback: 8}
+  H1:  {max_bars: 48, sl_atr_min: 1.0, sl_atr_max: 2.5, swing_lookback: 8}
+  H4:  {max_bars: 30, sl_atr_min: 1.0, sl_atr_max: 2.5, swing_lookback: 6}
+  D1:  {max_bars: 10, sl_atr_min: 1.0, sl_atr_max: 2.5, swing_lookback: 5}
+
+# Planes de salida PRE-DECLARADOS (fijados antes de ver sus resultados). La
+# validacion elige, por instrumento y temporalidad, que plan (si alguno)
+# tiene ventaja, con correccion por comparaciones multiples entre TODOS.
+# En TP1 se cierra `partial` de la posicion y el resto va a TP2 con el stop
+# movido a break-even. max_bars_mult alarga el cierre por tiempo.
+plans:
+  equilibrado:  {targets_r: [1.0, 2.0], partial: 0.5, max_bars_mult: 1.0}
+  alto_acierto: {targets_r: [0.5, 1.0], partial: 0.5, max_bars_mult: 1.0}
+  tendencia:    {targets_r: [1.5, 3.0], partial: 0.5, max_bars_mult: 2.0}
+
+# Filtros de emision. El umbral de probabilidad y que temporalidades quedan
+# habilitadas NO se fijan a mano: los decide la validacion fuera de muestra
+# (models/validation.json). Estos son los minimos de seguridad por encima.
+signals:
+  mode: strict                   # strict: solo grupos validados. informative: tambien los no validados, marcados como tales
+  min_probability_tp1: 0.0       # suelo EXTRA opcional en vivo (0 = usar solo el umbral validado de cada plan).
+                                 # Subirlo da menos señales, no mas fiables: el umbral ya lo fija la validacion.
+  min_expected_r: 0.05           # expectativa minima historica (en R, ya descontados costes)
+  min_similar_cases: 30          # casos historicos similares minimos para mostrar una probabilidad
+  entry_zone_r: 0.2              # profundidad de la zona de entrada, en fraccion de 1R (0 = sin zona).
+                                 # La referencia es lo validado; entrar mas adentro mejora el precio
+                                 # pero la operacion puede no ejecutarse nunca
+  extra_target_r: 3.0            # objetivo extra (TP3) que se muestra ademas de los dos del plan
+  news_blackout_hours: {M15: 2, H1: 3, H4: 0, D1: 0}   # sin señales intradia cerca de noticias de alto impacto
+  news_currencies: [USD, EUR]
+
+# Sesiones (UTC) en las que se aceptan señales intradia. Fuera de ellas la
+# liquidez es menor y los costes relativos se disparan.
+sessions_utc:
+  intraday_timeframes: [M15, H1]
+  allowed_hours: [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+
+data:
+  history_start: "2012-01-01"     # velas H1 (base de H1/H4/D1)
+  m1_history_start: "2021-01-01"  # velas M1 (base de M15); descargar mas es lento y el servidor limita
+  store_dir: data
+  live_source: auto              # auto: MT5 si esta disponible, si no Dukascopy (retraso ~1h, M15 desactivado)
+
+research:
+  first_test_year: 2015          # primeras predicciones fuera de muestra (walk-forward)
+  validation_end: "2021-12-31"   # umbral y temporalidades se eligen SOLO con datos hasta aqui
+  validation_end_overrides:      # M15 tiene historico desde 2021: su validacion termina mas tarde
+    M15: "2023-12-31"
+  retrain_every_months: 6
+  random_baseline_iterations: 300
+  significance_alpha: 0.05
+
+schedule:
+  scan_every_minutes: 3          # cada temporalidad se evalua al cierre de su vela; esto marca
+                                 # lo rapido que reacciona a TP1, stops y avisos de cierre
+  daily_report_utc: "21:30"
+  weekly_report_weekday: 6       # domingo (lunes=0)
+
+risk:
+  kill_switch:
+    min_signals: 20              # no se juzga la degradacion con menos señales cerradas
+    max_drawdown_r: 12.0         # suspension si la racha acumulada cae mas de 12R desde el maximo
+    calibration_alpha: 0.01      # suspension si los aciertos reales quedan significativamente por debajo de lo predicho
+
+disclaimer: >-
+  Estimacion estadistica basada en historico fuera de muestra, no una garantia.
+  No es asesoramiento financiero. Rendimientos pasados no garantizan resultados
+  futuros. Tu decides y ejecutas; el bot nunca opera por ti.

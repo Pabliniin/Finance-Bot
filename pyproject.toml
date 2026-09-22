@@ -1,7 +1,7 @@
 [project]
-name = "bot-finanzas"
-version = "0.1.0"
-description = "Sistema de apoyo a la decision para trading discrecional en forex (paper trading, senales basadas en reglas, seguimiento honesto de rendimiento real)."
+name = "finance-bot"
+version = "3.0.0"
+description = "Bot de Discord de señales para XAUUSD y EURUSD: confluencia de estrategias + probabilidad calibrada fuera de muestra. Solo informa; nunca ejecuta operaciones."
 requires-python = ">=3.11"
 readme = "README.md"
 license = { text = "Proprietary" }
@@ -9,46 +9,41 @@ license = { text = "Proprietary" }
 dependencies = [
     "pandas>=2.2",
     "numpy>=1.26",
+    "pyarrow>=16.1",
+    "requests>=2.32",
     "ta>=0.11.0",
-    "SQLAlchemy>=2.0",
-    "psycopg2-binary>=2.9",
+    "scikit-learn>=1.5",
+    "scipy>=1.13",
+    "discord.py>=2.4",
     "pydantic>=2.7",
     "pydantic-settings>=2.3",
     "PyYAML>=6.0",
-    "python-dotenv>=1.0",
-    "requests>=2.32",
-    "feedparser>=6.0",
-    "vaderSentiment>=3.3.2",
-    "discord.py>=2.4",
-    "APScheduler>=3.10",
-    "scipy>=1.13",
-    "statsmodels>=0.14",
+    "SQLAlchemy>=2.0",
     "tenacity>=8.3",
-    "pyarrow>=16.1",
 ]
 
 [project.optional-dependencies]
-# Estas dependencias SOLO se instalan y ejecutan en el mini PC Windows nativo
-# (collector/), nunca dentro de la imagen Docker (Linux). MetaTrader5 no tiene
-# wheels para Linux; duka necesita el terminal/red del host para descargas largas.
-windows-collector = [
-    "MetaTrader5>=5.0.45",
-    "duka>=1.7",
-]
+# Solo en el PC Windows donde corre el terminal MetaTrader 5 (fuente en vivo principal).
+mt5 = ["MetaTrader5>=5.0.45"]
+# pandas-stubs se omite a proposito: sus tipos obligan a llenar el codigo de
+# casts sin encontrar errores reales; mypy se centra en la logica propia.
 dev = [
     "pytest>=8.2",
-    "pytest-cov>=5.0",
     "ruff>=0.5",
     "mypy>=1.10",
-    "freezegun>=1.5",
+    "types-requests",
+    "types-PyYAML",
 ]
+
+[project.scripts]
+finance-bot = "finance_bot.__main__:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["data", "features", "strategy", "backtest", "risk", "tracking", "bot", "scheduler", "collector", "config", "scripts"]
+packages = ["finance_bot"]
 
 [tool.ruff]
 line-length = 120
@@ -62,4 +57,5 @@ testpaths = ["tests"]
 
 [tool.mypy]
 plugins = ["pydantic.mypy"]
+ignore_missing_imports = true
 warn_unused_ignores = true

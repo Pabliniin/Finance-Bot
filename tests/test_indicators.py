@@ -4,68 +4,78 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from features.technical import add_technical_indicators
-from features.volatility import add_volatility_features
+from finance_bot.indicators import _confirmed_pivots, compute_indicators, supertrend
+from tests.conftest import random_walk_bars
+
+_NUMERIC_CHECKED = [
+    "ema20",
+    "ema50",
+    "ema200",
+    "atr",
+    "rsi",
+    "macd",
+    "macd_hist",
+    "adx",
+    "bb_upper",
+    "bb_lower",
+    "kc_upper",
+    "donchian_high20",
+    "stochrsi_k",
+    "tenkan",
+    "kijun",
+    "senkou_a",
+    "senkou_b",
+    "supertrend",
+    "supertrend_dir",
+    "swing_high",
+    "swing_low",
+    "structure",
+    "resistance",
+    "support",
+    "candle_pattern",
+    "atr_pct_rank",
+]
 
 
-def _synthetic_ohlcv(n: int = 300, seed: int = 42, trend: float = 0.0) -> pd.DataFrame:
-    rng = np.random.default_rng(seed)
-    ts = pd.date_range("2024-01-01", periods=n, freq="h", tz="UTC")
-    steps = rng.normal(loc=trend, scale=0.5, size=n)
-    close = 100 + np.cumsum(steps)
-    high = close + rng.uniform(0.05, 0.3, size=n)
-    low = close - rng.uniform(0.05, 0.3, size=n)
-    open_ = close + rng.normal(0, 0.1, size=n)
-    volume = rng.uniform(50, 150, size=n)
-    return pd.DataFrame({"ts": ts, "open": open_, "high": high, "low": low, "close": close, "volume": volume})
+@pytest.mark.parametrize("cutoff", [320, 480, 555])
+def test_every_indicator_is_point_in_time(cutoff: int) -> None:
+    """Calcular con todo el historico o con el historico cortado en `cutoff`
+    debe dar el MISMO valor en esa vela. Si no, el indicador mira al futuro."""
+    bars = random_walk_bars(600, seed=4)
+    full = compute_indicators(bars)
+    truncated = compute_indicators(bars.iloc[: cutoff + 1])
+    for col in _NUMERIC_CHECKED:
+        a, b = full[col].iloc[cutoff], truncated[col].iloc[-1]
+        if pd.isna(a) and pd.isna(b):
+            continue
+        assert a == pytest.approx(b, rel=1e-9, abs=1e-9), col
 
 
-def test_rsi_stays_within_bounds():
-    df = add_technical_indicators(_synthetic_ohlcv())
-    valid = df["rsi"].dropna()
-    assert not valid.empty
-    assert valid.between(0, 100).all()
+def test_swing_pivot_only_appears_after_confirmation() -> None:
+    high = pd.Series([1, 2, 3, 10, 3, 2, 1, 1, 1], dtype=float)
+    pivots = _confirmed_pivots(high, k=3, kind="high")
+    # el maximo (10) esta en la posicion 3 pero no es "maximo de 7 velas" hasta ver 3 velas despues
+    assert pivots.iloc[:6].isna().all()
+    assert pivots.iloc[6] == 10
 
 
-def test_ema_fast_tracks_strong_uptrend_more_closely_than_ema_slow():
-    df = add_technical_indicators(_synthetic_ohlcv(trend=0.4))
-    tail = df.dropna(subset=["ema_fast", "ema_slow"]).tail(20)
-    # en una tendencia alcista sostenida, la EMA rapida debe ir por encima de la lenta
-    assert (tail["ema_fast"] > tail["ema_slow"]).mean() > 0.6
+def test_rsi_bounded_and_supertrend_follows_trend() -> None:
+    up = random_walk_bars(400, seed=2, drift=1.5)
+    ind = compute_indicators(up)
+    rsi = ind["rsi"].dropna()
+    assert rsi.between(0, 100).all()
+    _, direction = supertrend(up["high"], up["low"], up["close"])
+    assert (direction.dropna().tail(100) == 1).mean() > 0.8
 
 
-def test_add_technical_indicators_does_not_mutate_input():
-    original = _synthetic_ohlcv()
-    original_cols = list(original.columns)
-    add_technical_indicators(original)
-    assert list(original.columns) == original_cols
+def test_atr_is_nan_during_warmup_not_zero() -> None:
+    ind = compute_indicators(random_walk_bars(50, seed=3))
+    assert ind["atr"].iloc[:10].isna().all()
+    assert (ind["atr"].dropna() > 0).all()
 
 
-def test_atr_is_non_negative():
-    df = add_volatility_features(_synthetic_ohlcv())
-    valid = df["atr"].dropna()
-    assert not valid.empty
-    assert (valid >= 0).all()
-
-
-def test_vol_regime_values_are_within_expected_categories():
-    df = add_volatility_features(_synthetic_ohlcv())
-    assert set(df["vol_regime"].unique()) <= {"low", "normal", "high", "unknown"}
-
-
-@pytest.mark.parametrize("cutoff", [150, 220])
-def test_technical_indicators_are_point_in_time_safe(cutoff):
-    # Calcular sobre todo el historico y sobre un recorte hasta `cutoff` debe
-    # dar el MISMO valor en la ultima barra del recorte: si difiriera,
-    # significaria que el indicador esta usando datos posteriores a esa barra.
-    full = _synthetic_ohlcv(n=300)
-    truncated = full.iloc[: cutoff + 1].copy()
-
-    full_result = add_technical_indicators(full)
-    truncated_result = add_technical_indicators(truncated)
-
-    full_row = full_result.iloc[cutoff]
-    truncated_row = truncated_result.iloc[-1]
-
-    for col in ["ema_fast", "ema_slow", "rsi", "macd", "adx"]:
-        assert full_row[col] == pytest.approx(truncated_row[col], nan_ok=True)
+def test_support_below_and_resistance_above_close() -> None:
+    ind = compute_indicators(random_walk_bars(500, seed=9)).dropna(subset=["support", "resistance"])
+    assert (ind["support"] < ind["close"]).all()
+    assert (ind["resistance"] > ind["close"]).all()
+    assert np.isfinite(ind[["support", "resistance"]].to_numpy()).all()
