@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Política de Privacidad — Finance Bot</title>
+<style>
+  :root { color-scheme: light dark; --fg: #1a1a1a; --bg: #ffffff; --muted: #5c5c5c; --line: #e2e2e2; }
+  @media (prefers-color-scheme: dark) {
+    :root { --fg: #e8e8e8; --bg: #16181c; --muted: #9aa0a6; --line: #2c2f36; }
+  }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+         font: 16px/1.65 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  main { max-width: 46rem; margin: 0 auto; padding: 3rem 1rem 5rem; }
+  h1 { font-size: 1.9rem; line-height: 1.2; margin: 0 0 .3rem; }
+  h2 { font-size: 1.15rem; margin: 2.2rem 0 .6rem; }
+  .fecha { color: var(--muted); font-size: .9rem; margin-bottom: 2rem; }
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0; font-size: .95rem; }
+  th, td { border: 1px solid var(--line); padding: .5rem .6rem; text-align: left; vertical-align: top; }
+  th { font-weight: 600; }
+  ul { padding-left: 1.2rem; }
+  li { margin: .4rem 0; }
+  a { color: inherit; }
+  footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--line);
+           color: var(--muted); font-size: .9rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Política de Privacidad — Finance Bot</h1>
+  <p class="fecha">Última actualización: 22 de septiembre de 2026</p>
+
+  <p>Finance Bot es un bot de Discord privado y de uso personal. Esta política explica exactamente qué datos
+  trata, para qué y dónde se guardan.</p>
+
+  <h2>1. Qué datos trata</h2>
+  <table>
+    <tr><th>Dato</th><th>Para qué</th><th>Dónde se guarda</th></tr>
+    <tr><td>ID del servidor y del canal de Discord</td><td>Saber dónde puede responder y publicar</td>
+        <td>Fichero de configuración y base de datos local</td></tr>
+    <tr><td>ID de usuario de Discord de los administradores</td>
+        <td>Comprobar quién puede cambiar ajustes y a quién mencionar en una señal</td>
+        <td>Fichero de configuración local</td></tr>
+    <tr><td>Preferencias del bot (capital de referencia, % de riesgo, modo, silencios)</td>
+        <td>Adaptar los cálculos y los avisos</td><td>Base de datos local (SQLite)</td></tr>
+    <tr><td>Señales generadas por el propio bot y su seguimiento</td><td>Calcular resultados y estadísticas</td>
+        <td>Base de datos local (SQLite)</td></tr>
+  </table>
+  <p>Todo ello se guarda <strong>en el ordenador del propietario del bot</strong>, en la carpeta del proyecto. No
+  hay servidores externos, ni copias en la nube, ni base de datos compartida.</p>
+
+  <h2>2. Qué datos NO trata</h2>
+  <ul>
+    <li><strong>No lee los mensajes del servidor.</strong> El bot funciona con comandos de barra y no tiene
+    activado el permiso de contenido de mensajes (<em>Message Content Intent</em>), así que técnicamente no puede
+    leer lo que escribís.</li>
+    <li><strong>No guarda información personal</strong>: ni nombres, ni correos, ni datos de contacto, ni datos
+    de tu bróker, ni credenciales de trading.</li>
+    <li><strong>No accede a cuentas de trading.</strong> Lee precios de MetaTrader 5 en modo lectura; no puede
+    operar ni consultar tu saldo real.</li>
+    <li>No usa cookies ni rastreadores: no hay web.</li>
+  </ul>
+
+  <h2>3. Con quién se comparte</h2>
+  <p>Con nadie. Los datos no se venden, no se ceden a terceros, no se usan para publicidad ni para entrenar
+  servicios externos.</p>
+  <p>El bot sí se <strong>conecta</strong> a estos servicios de terceros para funcionar, enviando solo lo
+  imprescindible (peticiones de datos de mercado, sin información sobre ti):</p>
+  <ul>
+    <li><strong>Discord</strong> (API oficial) — para recibir comandos y publicar mensajes.</li>
+    <li><strong>Dukascopy</strong> — histórico y precios de XAUUSD y EURUSD.</li>
+    <li><strong>ForexFactory</strong> — calendario económico de noticias de alto impacto.</li>
+    <li><strong>MetaTrader 5</strong> — precios en vivo, en local, desde el terminal del propietario.</li>
+  </ul>
+
+  <h2>4. Cuánto tiempo se conservan</h2>
+  <p>Las preferencias y el historial de señales se conservan mientras el bot esté en uso, porque son necesarios
+  para calcular sus estadísticas. Se pueden borrar en cualquier momento eliminando el fichero de base de datos
+  del bot.</p>
+
+  <h2>5. Tus derechos</h2>
+  <p>Como los datos tratados son IDs públicos de Discord y ajustes del propio bot, basta con pedirlo al
+  propietario para que se borren, o expulsar al bot del servidor: a partir de ahí deja de tratar dato alguno de
+  ese servidor.</p>
+
+  <h2>6. Seguridad</h2>
+  <p>El token del bot y cualquier credencial viven en un fichero local <code>.env</code> que está excluido del
+  repositorio público. El código fuente completo se puede auditar en
+  <a href="https://github.com/Pabliniin/Finance-Bot">github.com/Pabliniin/Finance-Bot</a>.</p>
+
+  <h2>7. Contacto</h2>
+  <p>Responsable: <strong>Pablo</strong>, autor del repositorio
+  <a href="https://github.com/Pabliniin/Finance-Bot">github.com/Pabliniin/Finance-Bot</a>. Para ejercer cualquier
+  derecho o preguntar por esta política, abre una incidencia en ese repositorio o escribe por mensaje directo de
+  Discord al propietario del servidor donde esté el bot.</p>
+
+  <footer>
+    <a href="./terminos-de-servicio.html">Términos del Servicio</a> ·
+    <a href="https://github.com/Pabliniin/Finance-Bot">Código fuente</a>
+  </footer>
+</main>
+</body>
+</html>
