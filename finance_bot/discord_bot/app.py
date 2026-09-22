@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import functools
 import logging
+import os
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, time, timedelta
@@ -41,6 +42,8 @@ EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="finance-bot-wor
 CHANNEL_PREFERENCE = ("senales", "señales", "signals", "trading", "alertas", "bot", "general")
 PANEL_SETTING = "discord_panel_message_id"
 CHANNEL_SETTING = "discord_channel_id"
+# Si en este tiempo no se completa ningun ciclo, algo esta colgado y se reinicia el proceso.
+WATCHDOG_STALL = timedelta(minutes=15)
 
 
 def _button(label: str, custom_id: str, style: discord.ButtonStyle, emoji: str | None = None) -> discord.ui.Button:
@@ -76,6 +79,7 @@ class FinanceBot(discord.Client):
         self._panel_lock = asyncio.Lock()
         self._presence_index = -1
         self.restart_requested = False
+        self._last_cycle_done = datetime.now(UTC)
 
     # --- utilidades -------------------------------------------------------------
 
@@ -214,7 +218,8 @@ class FinanceBot(discord.Client):
         hh, mm = (int(x) for x in schedule.daily_report_utc.split(":"))
         self.daily_loop.change_interval(time=time(hh, mm, tzinfo=UTC))
         self.maintenance_loop.change_interval(time=time(22, 30, tzinfo=UTC))
-        for loop in (self.scan_loop, self.daily_loop, self.maintenance_loop, self.update_loop):
+        self._last_cycle_done = datetime.now(UTC)
+        for loop in (self.scan_loop, self.daily_loop, self.maintenance_loop, self.update_loop, self.watchdog_loop):
             if not loop.is_running():
                 loop.start()
 
@@ -372,6 +377,33 @@ class FinanceBot(discord.Client):
 
     @tasks.loop(minutes=1)
     async def scan_loop(self) -> None:
+        """Nada de lo que pase dentro puede matar el bucle: sin nadie mirando,
+        un bucle muerto es un bot que parece vivo y no hace nada."""
+        try:
+            await self._scan_once()
+        except Exception:  # noqa: BLE001
+            logger.exception("ciclo de escaneo fallido; se reintenta en el siguiente")
+        self._last_cycle_done = datetime.now(UTC)
+
+    @tasks.loop(minutes=5)
+    async def watchdog_loop(self) -> None:
+        """Vigila al vigilante. Si el bucle murio, lo relanza. Si lleva demasiado
+        sin terminar un ciclo (MT5 colgado bloqueando el hilo unico), el
+        proceso se reinicia entero: la tarea programada lo vuelve a levantar."""
+        if not self.scan_loop.is_running():
+            logger.error("El bucle de escaneo estaba parado; lo relanzo")
+            self.scan_loop.start()
+            return
+        silence = datetime.now(UTC) - self._last_cycle_done
+        if silence > WATCHDOG_STALL:
+            logger.critical("Sin completar un ciclo desde hace %s: reinicio el proceso", silence)
+            await self.send(
+                embeds.simple_embed("🔁 Reinicio", "Llevo demasiado sin completar un ciclo; me reinicio.", embeds.AMBER)
+            )
+            updater.schedule_restart()
+            os._exit(updater.EXIT_RESTART)  # el hilo colgado impediria una salida limpia
+
+    async def _scan_once(self) -> None:
         service = self.service
         try:
             result = await self.run_blocking(service.scan)
@@ -433,6 +465,12 @@ class FinanceBot(discord.Client):
 
     @tasks.loop(time=time(21, 30, tzinfo=UTC))
     async def daily_loop(self) -> None:
+        try:
+            await self._daily_report()
+        except Exception:  # noqa: BLE001
+            logger.exception("informe diario fallido")
+
+    async def _daily_report(self) -> None:
         service = self.service
         embed = await self.stats_embed("24h")
         embed.title = "🌙 Informe diario"
@@ -462,7 +500,10 @@ class FinanceBot(discord.Client):
     async def update_loop(self) -> None:
         """Una consulta barata a GitHub cada hora: asi un arreglo llega al PC
         del bot sin que nadie lo toque, y sin esperar a la noche."""
-        await self.self_update()
+        try:
+            await self.self_update()
+        except Exception:  # noqa: BLE001
+            logger.exception("comprobacion de actualizacion fallida")
 
     @tasks.loop(time=time(22, 30, tzinfo=UTC))
     async def maintenance_loop(self) -> None:
@@ -473,6 +514,7 @@ class FinanceBot(discord.Client):
             logger.exception("mantenimiento diario fallo")
 
     @scan_loop.before_loop
+    @watchdog_loop.before_loop
     @update_loop.before_loop
     @daily_loop.before_loop
     @maintenance_loop.before_loop
