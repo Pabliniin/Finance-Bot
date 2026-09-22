@@ -27,6 +27,8 @@ logger = logging.getLogger(__name__)
 LIVE_LOOKBACK_DAYS = 45
 # Un mismo tipo de aviso no se repite antes de esto (salvo que cambie de tipo).
 ADVICE_COOLDOWN = timedelta(hours=6)
+# Cada cuanto se reintenta MT5 cuando estamos con el respaldo retrasado.
+FEED_RETRY = timedelta(minutes=10)
 
 
 class _Missing:
@@ -60,14 +62,26 @@ class BotService:
         self.latest_analyses: dict[str, Analysis] = {}
         self.last_scan: datetime | None = None
         self.last_error: str | None = None
+        self._feed_checked = datetime.now(UTC)
         self._lock = threading.Lock()  # un escaneo a la vez (MT5 no es seguro entre hilos)
 
     # --- datos --------------------------------------------------------------------
 
     def _ensure_feed(self) -> LiveFeed:
+        """Si al arrancar no habia MT5 (el PC acaba de encenderse, el terminal
+        tarda en estar listo), se reintenta cada rato: si no, el bot se quedaria
+        con datos de una hora de retraso hasta el siguiente reinicio."""
+        now = datetime.now(UTC)
         if self.feed is None:
             self.feed = create_feed(self.cfg, self.secrets)
+            self._feed_checked = now
             logger.info("Fuente de datos en vivo: %s", self.feed.name)
+        elif not self.feed.realtime and now - self._feed_checked >= FEED_RETRY:
+            self._feed_checked = now
+            candidate = create_feed(self.cfg, self.secrets)
+            if candidate.realtime:
+                logger.info("Fuente en vivo mejorada a %s (antes %s)", candidate.name, self.feed.name)
+                self.feed = candidate
         return self.feed
 
     def refresh_data(self) -> None:

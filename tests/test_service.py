@@ -103,3 +103,40 @@ def test_peak_r_only_grows(service: BotService) -> None:
     assert service.tracker.update_peak_r("k", 0.8) == 0.8
     assert service.tracker.update_peak_r("k", 0.3) == 0.8
     assert service.tracker.update_peak_r("k", 1.4) == 1.4
+
+
+def test_delayed_feed_is_upgraded_when_mt5_appears(service: BotService, monkeypatch) -> None:
+    """El mini PC arranca y MT5 tarda: sin reintento el bot se quedaria con
+    datos de una hora de retraso hasta el siguiente reinicio."""
+    from datetime import UTC, datetime
+
+    from finance_bot import service as service_module
+
+    class Delayed:
+        name, realtime = "Dukascopy (retraso ~1h)", False
+
+    class Live:
+        name, realtime = "MT5", True
+
+    service.feed = Delayed()  # type: ignore[assignment]
+    service._feed_checked = datetime.now(UTC)
+    monkeypatch.setattr(service_module, "create_feed", lambda cfg, secrets: Live())
+
+    assert service._ensure_feed().name == "Dukascopy (retraso ~1h)"  # aun no toca reintentar
+
+    service._feed_checked = datetime.now(UTC) - service_module.FEED_RETRY
+    assert service._ensure_feed().name == "MT5"
+
+
+def test_realtime_feed_is_never_replaced(service: BotService, monkeypatch) -> None:
+    from datetime import UTC, datetime
+
+    from finance_bot import service as service_module
+
+    class Live:
+        name, realtime = "MT5", True
+
+    service.feed = Live()  # type: ignore[assignment]
+    service._feed_checked = datetime.now(UTC) - service_module.FEED_RETRY * 10
+    monkeypatch.setattr(service_module, "create_feed", lambda cfg, secrets: pytest.fail("no hace falta reconectar"))
+    assert service._ensure_feed().name == "MT5"
