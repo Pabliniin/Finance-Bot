@@ -207,11 +207,25 @@ En el PC nuevo:
 Si el bot arranca antes de que MT5 esté listo, no se queda colgado con datos
 retrasados: reintenta cada 10 minutos y se pasa a tiempo real en cuanto puede.
 
-Cuando el bot esté funcionando en el PC nuevo, apaga el viejo o desactiva ahí la
-tarea para no tener dos bots escribiendo a la vez:
+Cuando el bot esté funcionando en el PC nuevo, quítalo del viejo para no tener
+dos bots escribiendo a la vez. Lo reversible es **desactivar** la tarea:
 ```bash
-powershell -Command "Unregister-ScheduledTask -TaskName FinanceBot -Confirm:$false"
+schtasks /change /tn FinanceBot /disable
 ```
+
+Y si algún día quieres volver a usar este PC, se reactiva igual de fácil:
+```bash
+schtasks /change /tn FinanceBot /enable
+```
+
+Para borrarla del todo:
+```bash
+schtasks /delete /tn FinanceBot /f
+```
+
+> Estos comandos usan `schtasks` a propósito: los equivalentes de PowerShell
+> llevan `-Confirm:$false`, y si los envuelves en comillas dobles el `$false` se
+> convierte en texto y fallan con un error de tipos.
 
 ---
 
