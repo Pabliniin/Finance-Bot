@@ -15,7 +15,8 @@ cuenta), no promete rentabilidad y no es asesoramiento financiero.
 
 ## 1. Cómo funciona (en una página)
 
-Cada 5 minutos, sobre velas **ya cerradas** (nunca la vela en formación):
+Cada minuto (con MetaTrader 5; cada 3 con el respaldo gratuito), sobre velas
+**ya cerradas** (nunca la vela en formación):
 
 1. **20 estrategias votan** (+1 compra / −1 venta / 0 sin opinión), agrupadas en familias:
    - tendencia: EMAs 20/50/200, pendiente de la EMA200, Supertrend, ADX/DMI, Ichimoku, estructura de máximos y mínimos, canal Donchian
