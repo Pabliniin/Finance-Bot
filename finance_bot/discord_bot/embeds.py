@@ -332,7 +332,8 @@ def panel_embed(
             now_r = (r_by_key or {}).get(s["key"])
             extra = f" · **{now_r:+.2f}R**" if now_r is not None else ""
             tp1 = " · TP1 ✅" if s["tp1_notified"] else ""
-            rows.append(f"{side} {s['symbol']} {s['tf']} desde {price(s['entry'], digits)}{extra}{tp1}")
+            mark = "👤 " if s.get("source") == "manual" else ""
+            rows.append(f"{mark}{side} {s['symbol']} {s['tf']} desde {price(s['entry'], digits)}{extra}{tp1}")
         _add(embed, f"📌 Abiertas ({len(open_signals)})", "\n".join(rows))
     else:
         _add(embed, "📌 Abiertas", "Ninguna.")
@@ -361,11 +362,14 @@ def open_signals_embed(
             f"TP1     {price(s['tp1'], digits)}\n"
             f"TP2     {price(s['tp2'], digits)}\n```"
         )
+        manual = s.get("source") == "manual"
         extra = f"**{now_r:+.2f}R** ahora · " if now_r is not None else ""
-        extra += f"TP1 {pct(s['p_tp1'])} · desde {when(s['signal_time'])}"
+        extra += "tuya, sin probabilidad del modelo" if manual else f"TP1 {pct(s['p_tp1'])}"
+        extra += f" · desde {when(s['signal_time'])}"
         if s["tp1_notified"]:
             extra += "\n✅ TP1 tocado: mitad cerrada, stop en la entrada"
-        _add(embed, f"{'🟢' if s['direction'] > 0 else '🔴'} {side} {s['symbol']} {s['tf']}", value + extra)
+        icon = "👤" if manual else ("🟢" if s["direction"] > 0 else "🔴")
+        _add(embed, f"{icon} {side} {s['symbol']} {s['tf']}", value + extra)
     return _disclaimer(embed, cfg)
 
 
@@ -522,6 +526,7 @@ def help_embed(cfg: AppConfig, validated: int, model_ready: bool) -> discord.Emb
         embed,
         "Comandos",
         "`/analisis` `/senales` `/stats` `/validacion` `/riesgo` `/calendario`\n"
+        "`/seguir` una operacion tuya · `/dejar` de vigilarla\n"
         "`/capital` `/riesgo_pct` `/modo` `/silenciar` `/estado` `/reactivar` `/panel`",
     )
     if not model_ready:

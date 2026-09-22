@@ -63,3 +63,25 @@ def test_user_settings_persist(env) -> None:
     tracker.set_setting("capital_eur", "500")
     tracker.set_setting("mode", "informative")
     assert tracker.capital_eur() == 500.0 and tracker.mode() == "informative"
+
+
+def test_manual_trade_is_followed_but_kept_out_of_the_model_stats(env) -> None:
+    _, _, tracker = env
+    key = tracker.follow_manual("XAUUSD", "H1", 1, 4350.0, 4330.0)
+    opened = tracker.open_signals()
+    row = opened[opened["key"] == key].iloc[0]
+    assert row["source"] == "manual" and row["validated"] == 0
+    assert row["tp1"] == 4370.0 and row["tp2"] == 4390.0  # 1R = 20, plan equilibrado
+    assert tracker.closed_signals().empty  # aun abierta
+    assert tracker.stop_following(key)
+    assert tracker.closed_signals().empty  # cerrada, pero fuera de las cifras del modelo
+    assert len(tracker.closed_signals(source="manual")) == 1
+
+
+def test_manual_trade_rejects_a_stop_on_the_wrong_side(env) -> None:
+    _, _, tracker = env
+
+    with pytest.raises(ValueError, match="stop"):
+        tracker.follow_manual("XAUUSD", "H1", 1, 4350.0, 4360.0)
+    with pytest.raises(ValueError, match="stop"):
+        tracker.follow_manual("XAUUSD", "H1", -1, 4350.0, 4340.0)

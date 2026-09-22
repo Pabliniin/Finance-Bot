@@ -61,6 +61,7 @@ signals_table = Table(
     Column("hit_tp1", Float),
     Column("hit_tp2", Float),
     Column("peak_r", Float),  # mejor R latente visto en vivo (para el aviso de "devolviendo beneficio")
+    Column("source", String),  # "bot" (señal del modelo) o "manual" (operacion tuya)
 )
 
 # Cada aviso de gestion, con el R que llevaba la operacion en ese momento: asi se
@@ -140,8 +141,15 @@ class Tracker:
         with self.engine.connect() as conn:
             return pd.read_sql(select(signals_table).where(signals_table.c.status == "open"), conn)
 
-    def closed_signals(self, since: datetime | None = None) -> pd.DataFrame:
+    def closed_signals(self, since: datetime | None = None, source: str = "bot") -> pd.DataFrame:
+        """Por defecto solo las señales del bot: las operaciones que sigues a
+        mano no tienen probabilidad del modelo y mezclarlas falsearia /stats y
+        el interruptor de seguridad."""
         query = select(signals_table).where(signals_table.c.status == "closed")
+        if source == "bot":  # las filas antiguas no tienen columna: son del bot
+            query = query.where((signals_table.c.source == "bot") | (signals_table.c.source.is_(None)))
+        elif source != "todas":
+            query = query.where(signals_table.c.source == source)
         if since is not None:
             query = query.where(signals_table.c.exit_time >= since)
         with self.engine.connect() as conn:
@@ -172,8 +180,63 @@ class Tracker:
                     payload=payload,
                     status="open",
                     tp1_notified=False,
+                    source="bot",
                 )
             )
+
+    def follow_manual(
+        self, symbol: str, tf: str, direction: int, entry: float, stop: float, plan_name: str = "equilibrado"
+    ) -> str:
+        """Sigue una operacion TUYA con las mismas reglas del plan: te avisa al
+        tocar TP1, al cerrarse y si ve motivo para salir antes. No lleva
+        probabilidad del modelo (no es un setup suyo) y queda fuera de /stats."""
+        if direction not in (1, -1) or entry <= 0 or stop <= 0 or entry == stop:
+            raise ValueError("entrada y stop tienen que ser precios distintos y positivos")
+        if (direction > 0 and stop >= entry) or (direction < 0 and stop <= entry):
+            raise ValueError("en una compra el stop va por debajo de la entrada, y al reves en una venta")
+        plan = self.cfg.plans[plan_name]
+        r_price = abs(entry - stop)
+        now = datetime.now(UTC).replace(second=0, microsecond=0)
+        key = f"manual|{symbol}|{tf}|{now.isoformat()}"
+        t1, t2 = plan.targets()
+        with self.engine.begin() as conn:
+            conn.execute(
+                signals_table.insert().values(
+                    key=key,
+                    created_at=datetime.now(UTC),
+                    symbol=symbol,
+                    tf=tf,
+                    direction=direction,
+                    plan=plan_name,
+                    validated=False,
+                    signal_time=now,
+                    entry=entry,
+                    stop=stop,
+                    tp1=entry + direction * r_price * t1,
+                    tp2=entry + direction * r_price * t2,
+                    r_price=r_price,
+                    p_tp1=0.0,  # no hay modelo detras: en los mensajes se muestra "n/d"
+                    p_tp2=0.0,
+                    similar_ev=None,
+                    max_hours=plan.max_bars(self.cfg.timeframes[tf]) * TF_MINUTES[tf] / 60,
+                    payload="{}",
+                    status="open",
+                    tp1_notified=False,
+                    source="manual",
+                )
+            )
+        logger.info("Siguiendo operacion manual %s", key)
+        return key
+
+    def stop_following(self, key: str) -> bool:
+        """Deja de seguir una operacion manual (cerrada por ti a mano)."""
+        with self.engine.begin() as conn:
+            result = conn.execute(
+                signals_table.update()
+                .where(signals_table.c.key == key, signals_table.c.source == "manual")
+                .values(status="closed", exit_reason="manual", exit_time=datetime.now(UTC))
+            )
+        return bool(result.rowcount)
 
     def update_open(self, md: MarketData) -> list[dict]:
         """Resuelve las señales abiertas con las velas mas recientes. Devuelve

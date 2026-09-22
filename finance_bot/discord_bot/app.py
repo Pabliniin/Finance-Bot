@@ -476,6 +476,80 @@ def register_commands(bot: FinanceBot) -> None:  # noqa: C901 - un bloque por co
             embed=embeds.open_signals_embed(open_signals, cfg, await bot.r_by_key(open_signals))
         )
 
+    @tree.command(name="seguir", description="Vigila una operacion TUYA y te avisa cuando convenga cerrarla")
+    @app_commands.describe(
+        instrumento="XAUUSD (oro) o EURUSD",
+        direccion="Si has comprado o vendido",
+        entrada="Precio al que entraste",
+        stop="Tu stop loss",
+        temporalidad="Con que ritmo vigilarla (por defecto H1)",
+    )
+    @app_commands.choices(
+        instrumento=symbol_choices,
+        direccion=[
+            app_commands.Choice(name="compra", value="compra"),
+            app_commands.Choice(name="venta", value="venta"),
+        ],
+        temporalidad=[app_commands.Choice(name=tf, value=tf) for tf in ("M15", "H1", "H4", "D1")],
+    )
+    async def seguir(
+        interaction: discord.Interaction,
+        instrumento: app_commands.Choice[str],
+        direccion: app_commands.Choice[str],
+        entrada: float,
+        stop: float,
+        temporalidad: app_commands.Choice[str] | None = None,
+    ) -> None:
+        if not await guard(interaction, admin=True):
+            return
+        tf = temporalidad.value if temporalidad else "H1"
+        try:
+            key = await bot.run_blocking(
+                bot.service.tracker.follow_manual,
+                instrumento.value,
+                tf,
+                1 if direccion.value == "compra" else -1,
+                entrada,
+                stop,
+            )
+        except ValueError as exc:
+            await interaction.response.send_message(f"⚠️ {exc}", ephemeral=True)
+            return
+        open_signals = await bot.run_blocking(bot.service.tracker.open_signals)
+        row = open_signals[open_signals["key"] == key].iloc[0]
+        digits = cfg.instrument(instrumento.value).digits
+        await interaction.response.send_message(
+            embed=embeds.simple_embed(
+                f"👤 Vigilando tu {direccion.value} de {instrumento.value} {tf}",
+                f"```\nEntrada {embeds.price(entrada, digits)}\nSL      {embeds.price(stop, digits)}\n"
+                f"TP1     {embeds.price(row['tp1'], digits)}\nTP2     {embeds.price(row['tp2'], digits)}\n```"
+                f"Te aviso al tocar TP1, al cerrarse y si veo motivo para salir antes.\n"
+                f"No lleva probabilidad del modelo (no es un setup suyo) y no entra en `/stats`.\n"
+                f"Para dejarlo: `/dejar`.",
+                embeds.GREEN if direccion.value == "compra" else embeds.RED,
+            )
+        )
+
+    @tree.command(name="dejar", description="Deja de vigilar tus operaciones manuales")
+    @app_commands.describe(instrumento="Solo las de este instrumento (si no, todas)")
+    @app_commands.choices(instrumento=symbol_choices)
+    async def dejar(interaction: discord.Interaction, instrumento: app_commands.Choice[str] | None = None) -> None:
+        if not await guard(interaction, admin=True):
+            return
+        open_signals = await bot.run_blocking(bot.service.tracker.open_signals)
+        manual = (
+            open_signals[open_signals["source"] == "manual"] if "source" in open_signals else open_signals.iloc[0:0]
+        )
+        if instrumento is not None:
+            manual = manual[manual["symbol"] == instrumento.value]
+        stopped = 0
+        for key in manual["key"]:
+            stopped += int(await bot.run_blocking(bot.service.tracker.stop_following, key))
+        await interaction.response.send_message(
+            f"✅ Dejo de vigilar {stopped} operacion(es)." if stopped else "No habia ninguna operacion tuya vigilada.",
+            ephemeral=True,
+        )
+
     @tree.command(name="stats", description="Resultados reales del seguimiento en papel")
     @app_commands.describe(periodo="Ventana de tiempo")
     @app_commands.choices(
