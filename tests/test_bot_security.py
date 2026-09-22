@@ -104,3 +104,28 @@ def test_logging_survives_without_console(monkeypatch, tmp_path) -> None:
     handlers = logging.getLogger().handlers
     assert handlers and not any(type(h) is logging.StreamHandler for h in handlers)
     logging.getLogger(__name__).info("no debe fallar")
+
+
+def test_startup_message_only_the_first_time(cfg, monkeypatch) -> None:
+    """Reiniciar no es noticia: no hay que llenar el canal de "bot arrancado"."""
+    import asyncio
+    from types import SimpleNamespace
+
+    bot = _bot(cfg, {111})
+    sent: list[str] = []
+    stored: dict[str, str] = {}
+    bot.service = SimpleNamespace(  # type: ignore[assignment]
+        cfg=cfg,
+        secrets=Secrets(discord_bot_token="x"),
+        artifacts=SimpleNamespace(validation={"selection": {}}),
+        tracker=SimpleNamespace(get_setting=lambda key, default=None: stored.get(key, default)),
+    )
+    monkeypatch.setattr(bot, "send", lambda embed, *a, **k: sent.append(embed.title) or asyncio.sleep(0))
+    monkeypatch.setattr(bot, "update_panel", lambda *a, **k: asyncio.sleep(0))
+
+    asyncio.run(bot._announce())
+    assert len(sent) == 1  # primera vez: se presenta
+
+    stored[bot_app.PANEL_SETTING] = "123"
+    asyncio.run(bot._announce())
+    assert len(sent) == 1  # ya hay panel: silencio

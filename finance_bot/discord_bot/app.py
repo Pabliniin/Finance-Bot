@@ -180,11 +180,14 @@ class FinanceBot(discord.Client):
         logger.error("No encuentro ningun canal donde pueda escribir. Dame permiso de 'Enviar mensajes'.")
 
     async def _announce(self) -> None:
+        """Arrancar no es noticia: el panel ya dice como esta todo. Solo se
+        presenta la primera vez en un canal, o si falta el modelo."""
         service = self.service
-        validated = len(service.artifacts.validation.get("selection", {})) if service.artifacts else 0
-        embed = embeds.help_embed(service.cfg, validated, service.artifacts is not None)
-        embed.title = "🤖 Bot arrancado"
-        await self.send(embed)
+        first_time = service.tracker.get_setting(PANEL_SETTING) is None
+        if first_time or service.artifacts is None:
+            validated = len(service.artifacts.validation.get("selection", {})) if service.artifacts else 0
+            embed = embeds.help_embed(service.cfg, validated, service.artifacts is not None)
+            await self.send(embed)
         await self.update_panel()
 
     def _start_jobs(self) -> None:
