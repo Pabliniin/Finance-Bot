@@ -503,18 +503,23 @@ class SignalEngine:
                 s.blockers.append(
                     f"noticia de alto impacto en menos de {blackout:g}h ({soon[0].currency} {soon[0].title})"
                 )
+        # Confluencia fuerte: se exige que muchas estrategias coincidan. Filtra los
+        # setups flojos incluso en informativo; el usuario quiere pocas y solidas.
+        confluence = len(s.votes_for) - len(s.votes_against)
+        if confluence < cfg.min_confluence:
+            s.blockers.append(
+                f"confluencia debil: {len(s.votes_for)}/20 a favor (netos {confluence}, minimo {cfg.min_confluence})"
+            )
+        # El backtest entra justo al cierre de la vela. Una señal que llega tarde ya
+        # no es la operacion validada: bloquea en ambos modos (solo señales frescas,
+        # recien disparadas; asi no se sueltan de golpe setups viejos al arrancar).
         age = now - s.signal_time.to_pydatetime()
         max_delay = MAX_EMIT_DELAY.get(s.tf, timedelta(minutes=30))
         if age > max_delay:
             minutes = int(age.total_seconds() // 60)
-            # El backtest entra justo al cierre de la vela. En estricto, una señal
-            # que llega tarde ya no es la operacion validada y no se emite. En
-            # informativo se envia igual con el aviso: el precio y el stop son los
-            # de AHORA (no los de la vela vieja), asi que la operacion sigue siendo
-            # tomable; solo pierde el respaldo del backtest.
-            strict_rule(
-                f"la vela cerro hace {minutes} min: entra solo si el precio sigue en la zona; "
-                "el backtest entraba justo al cierre, asi que esta ya no es la operacion validada"
+            s.blockers.append(
+                f"la vela cerro hace {minutes} min (maximo {int(max_delay.total_seconds() // 60)} min): "
+                "no es una entrada fresca"
             )
         if s.size is not None and not s.size.fits:
             s.warnings.append(s.size.note)

@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 from finance_bot.data.calendar import EconomicEvent
-from finance_bot.engine.signals import Signal, SignalEngine, probability_ladder, similar_cases
+from finance_bot.engine.signals import Signal, SignalEngine, VoteView, probability_ladder, similar_cases
 
 
 def _history(n: int = 400, seed: int = 0) -> pd.DataFrame:
@@ -74,7 +74,8 @@ def _signal(**overrides) -> Signal:
         hours_to_tp1_median=4.0,
         max_hours=48.0,
         triggers=["t"],
-        votes_for=[],
+        # confluencia fuerte por defecto (12/20 a favor): la señal tipica de test emite
+        votes_for=[VoteView(f"v{i}", f"voto {i}", "trend", 1, "") for i in range(12)],
         votes_against=[],
         top_factors=[],
         news=[],
@@ -115,18 +116,28 @@ def test_informative_mode_turns_validation_and_ev_into_warnings(cfg) -> None:
     assert any("SIN VENTAJA VALIDADA" in w for w in s.warnings)
 
 
-def test_late_signal_blocks_in_strict_but_warns_in_informative(cfg) -> None:
+def test_late_signal_never_emits_only_fresh_ones(cfg) -> None:
+    """Solo señales frescas (recien disparadas). Una vela vieja no se emite en
+    ningun modo: evita el aluvion de setups viejos al arrancar."""
     engine = SignalEngine(cfg, md=None, artifacts=None)  # type: ignore[arg-type]
     late_now = datetime(2026, 9, 22, 11, 30, tzinfo=UTC)  # H1 cerro a las 10:00, 90 min tarde
+    for mode in ("strict", "informative"):
+        s = _signal(tf="H1", validated=False, similar_ev=0.10)
+        engine._apply_gates(s, mode, late_now)
+        assert not s.emit and any("la vela cerro" in b for b in s.blockers)
 
-    strict = _signal(tf="H1")
-    engine._apply_gates(strict, "strict", late_now)
-    assert not strict.emit and any("la vela cerro" in b for b in strict.blockers)
 
-    # en informativo la señal se envia igual, con el aviso: la puede tomar el usuario
-    info = _signal(tf="H1", validated=False, similar_ev=0.10)
-    engine._apply_gates(info, "informative", late_now)
-    assert info.emit and any("la vela cerro" in w for w in info.warnings)
+def test_weak_confluence_is_filtered_out(cfg) -> None:
+    """Pocas estrategias a favor -> no se emite, ni en informativo: el usuario
+    quiere señales solidas, no cualquier setup."""
+    engine = SignalEngine(cfg, md=None, artifacts=None)  # type: ignore[arg-type]
+    now = datetime(2026, 9, 22, 10, 5, tzinfo=UTC)
+    weak = _signal(  # 4 a favor, 3 en contra: confluencia neta 1 < 8
+        votes_for=[VoteView(f"v{i}", "x", "trend", 1, "") for i in range(4)],
+        votes_against=[VoteView(f"w{i}", "x", "trend", -1, "") for i in range(3)],
+    )
+    engine._apply_gates(weak, "informative", now)
+    assert not weak.emit and any("confluencia debil" in b for b in weak.blockers)
 
 
 def test_news_blackout_blocks_intraday(cfg) -> None:

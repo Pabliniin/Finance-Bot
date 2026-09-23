@@ -65,6 +65,9 @@ signals:
                                  # La referencia es lo validado; entrar mas adentro mejora el precio
                                  # pero la operacion puede no ejecutarse nunca
   extra_target_r: 3.0            # objetivo extra (TP3) que se muestra ademas de los dos del plan
+  min_confluence: 8              # votos netos minimos a favor (sobre 20) para emitir una señal:
+                                 # sube para menos señales y mas fuertes, baja para ver mas
+  one_signal_per_symbol: true    # solo la mejor señal de cada instrumento por escaneo
   news_blackout_hours: {M15: 2, H1: 3, H4: 0, D1: 0}   # sin señales intradia cerca de noticias de alto impacto
   news_currencies: [USD, EUR]
 

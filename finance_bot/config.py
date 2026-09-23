@@ -70,6 +70,11 @@ class SignalsConfig(BaseModel):
     entry_zone_r: float = Field(default=0.2, ge=0, le=0.5)
     # Objetivo extra que se muestra ademas de los dos del plan, en R.
     extra_target_r: float = Field(default=3.0, gt=0)
+    # Confluencia minima (votos netos a favor sobre 20) para emitir. Sube el numero
+    # para menos señales y mas fuertes; bajalo para ver mas.
+    min_confluence: int = Field(default=8, ge=0, le=20)
+    # Emitir solo la mejor señal de cada instrumento por escaneo (no varias a la vez).
+    one_signal_per_symbol: bool = True
 
 
 class SessionsConfig(BaseModel):

@@ -221,9 +221,13 @@ class BotService:
                     continue
                 result.analyses[symbol] = analysis
                 muted = self.tracker.muted_until(symbol)
-                for signal in analysis.signals:
-                    if not signal.emit or self.tracker.is_known(signal.key):
-                        continue
+                # De todas las temporalidades que disparan a la vez, se emite solo la
+                # MEJOR de cada instrumento (mas probable): nada de H1+H4+D1 de golpe.
+                candidates = [s for s in analysis.signals if s.emit and not self.tracker.is_known(s.key)]
+                candidates.sort(key=lambda s: s.p_tp1, reverse=True)
+                if self.cfg.signals.one_signal_per_symbol:
+                    candidates = candidates[:1]
+                for signal in candidates:
                     if kill_active:
                         signal.blockers.append("interruptor de seguridad activo")
                         continue
