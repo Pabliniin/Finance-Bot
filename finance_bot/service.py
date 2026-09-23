@@ -105,9 +105,9 @@ class BotService:
 
     def refresh_with_fallback(self) -> str | None:
         """Si la fuente en vivo falla (MT5 cerrado, terminal reiniciandose), se
-        sigue con el respaldo retrasado en vez de dejar al bot a ciegas. Con
-        datos retrasados el propio filtro descarta las señales por tardias, asi
-        que no se emite nada dudoso. Devuelve el aviso, si lo hubo."""
+        sigue con el respaldo retrasado en vez de dejar al bot a ciegas. Sin M15
+        y sin cotizacion en vivo: lo que salga lleva "precio estimado" y el
+        filtro de retraso descarta lo que llegue tarde. Devuelve el aviso."""
         try:
             self.refresh_data()
             return None

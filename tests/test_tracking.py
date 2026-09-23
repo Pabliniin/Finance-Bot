@@ -114,3 +114,16 @@ def test_kill_switch_ignores_unvalidated_signals(env) -> None:
             )
         )
     assert tracker.evaluate_kill_switch() is None  # 25 perdidas seguidas, pero ninguna validada
+
+
+def test_open_signals_are_resolved_with_the_targets_that_were_sent(env) -> None:
+    """Cambiar el plan en la configuracion no puede cambiar el resultado de una
+    señal ya enviada: se resuelve con los objetivos guardados en su fila."""
+    cfg, md, tracker = env
+    # enviada con TP1 a +1R (2010) y TP2 a +2R (2020); el plan actual del fichero da igual
+    signal = _signal(entry=2000.0, stop=1990.0, tp1=2010.0, tp2=2020.0, r_price=10.0, max_hours=1.0)
+    tracker.record(signal)
+    # el precio llega a 2012 (toca TP1 = +1R) y luego se queda: sin TP2
+    md.m1_store.write("XAUUSD", make_m1("2026-09-22 10:00", [2000, 2005, 2012, 2011, 2011]))
+    events = tracker.update_open(md)
+    assert [e["type"] for e in events] == ["tp1"]

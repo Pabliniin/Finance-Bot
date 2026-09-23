@@ -272,8 +272,20 @@ class Tracker:
                 },
                 index=[signal_time],
             )
-            max_bars = plan.max_bars(self.cfg.timeframes[tf])
-            labels = label_candidates(cand, path, inst, TF_MINUTES[tf], max_bars, plan.targets(), plan.partial, 1)
+            # Se resuelve con lo que SE ENVIO (objetivos y tiempo guardados en la fila),
+            # no con la configuracion actual: si cambia el plan, las abiertas no cambian.
+            r_price = float(sig["r_price"])
+            direction = int(sig["direction"])
+            targets = (
+                round((float(sig["tp1"]) - float(sig["entry"])) * direction / r_price, 6),
+                round((float(sig["tp2"]) - float(sig["entry"])) * direction / r_price, 6),
+            )
+            max_bars = max(1, round(float(sig["max_hours"]) * 60 / TF_MINUTES[tf]))
+            try:
+                partial = float(json.loads(sig["payload"]).get("partial", plan.partial))
+            except (TypeError, ValueError):
+                partial = plan.partial
+            labels = label_candidates(cand, path, inst, TF_MINUTES[tf], max_bars, targets, partial, 1)
             label = labels.iloc[0]
             if pd.isna(label["hit_tp1"]):
                 continue
