@@ -29,6 +29,8 @@ LIVE_LOOKBACK_DAYS = 45
 ADVICE_COOLDOWN = timedelta(hours=6)
 # Cada cuanto se reintenta MT5 cuando estamos con el respaldo retrasado.
 FEED_RETRY = timedelta(minutes=10)
+# Un dia con al menos tantas velas M1 se considera completo (oro y EURUSD cotizan ~23 h).
+FULL_DAY_BARS = 1200
 
 
 class _Missing:
@@ -118,6 +120,22 @@ class BotService:
             self.refresh_data()
             return f"MT5 no responde ({exc}); mientras tanto, datos con retraso"
 
+    def protect_live_days(self, symbol: str) -> set[str]:
+        """Dias M1 completos que ya escribio la fuente en vivo (MT5) se marcan
+        como descargados: la consolidacion nocturna con Dukascopy solo rellena
+        huecos. Si los pisara, las señales abiertas se re-etiquetarian sobre
+        otro camino de precios (otro broker) y los resultados cambiarian solos."""
+        today = datetime.now(UTC).date()
+        start = datetime.now(UTC) - timedelta(days=LIVE_LOOKBACK_DAYS)
+        recent = self.md.base_m1(symbol, start=start)
+        if recent.empty:
+            return set()
+        counts = recent.groupby(recent.index.date).size()
+        full = {day.isoformat() for day, n in counts.items() if n >= FULL_DAY_BARS and day < today}
+        if full:
+            self.md.m1_store.mark_fetched(symbol, full)
+        return full
+
     def maintenance(self) -> str:
         """Diario: consolida el historico con Dukascopy (meses H1 cerrados y
         dias M1 completos). Reanudable y barato si ya esta al dia."""
@@ -125,6 +143,7 @@ class BotService:
         lines = []
         for symbol in self.cfg.instruments:
             divisor = self.cfg.instrument(symbol).dukascopy_divisor
+            self.protect_live_days(symbol)
             n_h1 = download_h1_history(
                 client, self.md.h1_store, symbol, divisor, date.fromisoformat(self.cfg.data.history_start)
             )
@@ -139,7 +158,9 @@ class BotService:
     # --- escaneo ------------------------------------------------------------------
 
     def analyze(self, symbol: str, quote: tuple[float, float] | None | _Missing = _MISSING) -> Analysis:
-        feed = self._ensure_feed()
+        # La fuente solo cambia al refrescar datos (refresh_data): mejorarla aqui, a
+        # mitad de escaneo, mezclaria complete_until de una fuente con la otra.
+        feed = self.feed or self._ensure_feed()
         return self.engine.analyze(
             symbol,
             complete_until=self.complete_until.get(symbol),
@@ -162,14 +183,25 @@ class BotService:
                 return result
             self.calendar.refresh()
 
-            result.events = self.tracker.update_open(self.md)
-            for event in result.events:
-                if event["type"] == "closed":
-                    # honestidad: si hubo aviso, que se vea que habria pasado haciendole caso
-                    event["advice_r"], event["advice_headline"] = self.tracker.first_advice_r(event["key"])
-            result.kill_switch_reason = self.tracker.evaluate_kill_switch()
+            # Cada etapa protegida por separado: que falle el seguimiento no debe
+            # dejar sin analisis, y al reves.
+            try:
+                result.events = self.tracker.update_open(self.md)
+                for event in result.events:
+                    if event["type"] == "closed":
+                        # honestidad: si hubo aviso, que se vea que habria pasado haciendole caso
+                        event["advice_r"], event["advice_headline"] = self.tracker.first_advice_r(event["key"])
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("seguimiento de señales abiertas fallo")
+                result.errors.append(f"seguimiento: {exc}")
+            try:
+                result.kill_switch_reason = self.tracker.evaluate_kill_switch()
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("interruptor de seguridad fallo")
+                result.errors.append(f"interruptor: {exc}")
             kill_active, _ = self.tracker.kill_switch_status()
-            open_now = len(self.tracker.open_signals())
+            # el tope es para las señales del bot: las operaciones que sigues a mano no cuentan
+            open_now = len(self.tracker.open_signals(source="bot"))
             now = datetime.now(UTC)
 
             quotes: dict[str, tuple[float, float] | None] = {}
@@ -205,7 +237,11 @@ class BotService:
                     self.tracker.record(signal)
                     result.new_signals.append(signal)
                     open_now += 1
-            result.advice = self._exit_advice(result.analyses, quotes, now)
+            try:
+                result.advice = self._exit_advice(result.analyses, quotes, now)
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("avisos de cierre fallaron")
+                result.errors.append(f"avisos de cierre: {exc}")
             self.last_scan = now
             self.latest_analyses = result.analyses
             self.last_error = "; ".join(result.errors) or None

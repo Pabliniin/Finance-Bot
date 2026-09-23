@@ -40,7 +40,7 @@ Cada minuto (con MetaTrader 5; cada 3 con el respaldo gratuito), sobre velas
    - la escalera de objetivos (qué % llegó a +0,5R, +1R, +1,5R, +2R, +3R antes del stop)
    - la expectativa en R después de costes
    - cuánto duraron
-5. **Puertas de emisión**. Solo te avisa si se cumple todo:
+5. **Puertas de emisión**. En modo estricto solo te avisa si se cumple todo:
    - la combinación instrumento/temporalidad superó la validación
    - la probabilidad está sobre el umbral validado
    - la expectativa de los casos similares es positiva
@@ -48,6 +48,8 @@ Cada minuto (con MetaTrader 5; cada 3 con el respaldo gratuito), sobre velas
    - no hay noticia de alto impacto USD/EUR encima (intradía)
    - el interruptor de seguridad está apagado
    - no se supera el máximo de señales abiertas
+
+   En modo **informativo** (el que viene configurado) te envía todos los setups que disparan, cada uno con sus avisos: «SIN VENTAJA VALIDADA», expectativa histórica real, umbral no alcanzado… Solo sigue bloqueando lo que hace la operación inejecutable: que llegue tarde o que haya una noticia fuerte encima.
 6. **Seguimiento**: cada señal enviada se sigue hasta el cierre con las mismas reglas del backtest. Recibes un aviso cuando toca TP1 (cierra la mitad y mueve el stop a la entrada), TP2, stop o cierre por tiempo. `/stats` compara lo real con lo que predijo el modelo.
 7. **Avisos de cierre**: mientras la operación vive, el bot te avisa si ve motivo para salir antes:
    - el contexto de esa temporalidad se gira en contra (6 o más votos netos)
@@ -119,7 +121,7 @@ que ese seguimiento en vivo es la única prueba limpia que queda (ver sección 5
 4. No hace falta activar ningún *intent* ni permiso especial.
 
 ### 3.2 Instalar
-1. Instala **Python 3.12** desde python.org (marca *Add python.exe to PATH*).
+1. Instala **Python 3.12** desde python.org (marca *Add python.exe to PATH*). Si usas `INSTALAR.bat` (sección 3.7), lo instala él si falta.
 2. Copia esta carpeta completa al PC. Si traes también `data/` y `models/` desde
    el PC donde se hizo la investigación, te ahorras la descarga y el entrenamiento.
 3. En PowerShell, dentro de la carpeta:
@@ -144,8 +146,9 @@ ponlos en `DISCORD_GUILD_ID` y `DISCORD_CHANNEL_ID`.
 
 En cualquier otro servidor el bot no responde. Si además rellenas
 `DISCORD_ADMIN_USER_IDS` con tu ID de usuario, solo tú podrás cambiar ajustes
-(`/capital`, `/modo`, `/silenciar`, `/reactivar`) y serás a quien mencione
-cuando salte una señal o un aviso urgente.
+(`/capital`, `/modo`, `/silenciar`, `/reactivar`). Las señales y los avisos
+de cierre mencionan a `@here` (se cambia en `config/settings.yaml`,
+`notifications.mention`: `here`, `admins` o `none`).
 
 ### 3.4 Datos y modelo (solo si no los has copiado)
 ```bash
@@ -199,13 +202,18 @@ token: trátalo como una llave.**
 
 En el PC nuevo:
 1. Copia el ZIP (USB o carpeta compartida) y extráelo donde quieras.
-2. Doble clic en **INSTALAR.bat**. Instala dependencias, registra el arranque
-   automático, lanza el bot y te dice qué fuente de datos ha encontrado.
+2. Doble clic en **INSTALAR.bat**. Instala Python si falta, las dependencias,
+   registra el arranque automático, desactiva la suspensión del PC, lanza el bot
+   y te dice qué fuente de datos ha encontrado.
 3. Instala MetaTrader 5 y entra **una vez** en tu cuenta demo marcando *Guardar
    datos de la cuenta*. A partir de ahí el bot abre el terminal él solo.
 
 Si el bot arranca antes de que MT5 esté listo, no se queda colgado con datos
 retrasados: reintenta cada 10 minutos y se pasa a tiempo real en cuanto puede.
+
+El bot arranca **al iniciar sesión** en Windows: deja ese usuario con la sesión
+iniciada. Si quieres que entre solo al encender el PC, activa el inicio de
+sesión automático (`netplwiz`).
 
 Cuando el bot esté funcionando en el PC nuevo, quítalo del viejo para no tener
 dos bots escribiendo a la vez. Lo reversible es **desactivar** la tarea:
@@ -249,6 +257,7 @@ Discord te los ofrece con su descripción.
 | `/silenciar` | Silencia un instrumento unas horas |
 | `/estado` | Salud del sistema: datos, fuente, modelo, interruptor de seguridad |
 | `/reactivar` | Reactiva el bot tras el interruptor de seguridad (después de revisarlo) |
+| `/ayuda` | Cómo funciona y qué significa cada cosa |
 | `/panel` | Vuelve a crear el panel fijo del canal |
 
 **El panel.** El bot mantiene un mensaje fijado en el canal que se actualiza
@@ -306,7 +315,7 @@ Los sirve la rama `gh-pages` del repositorio. Si cambias los documentos en
 `docs/`, copialos a esa rama para que la web se actualice.
 
 ## 6b. Actualizaciones automaticas
-El bot comprueba GitHub al arrancar y cada noche. Si hay un commit nuevo en
+El bot comprueba GitHub al arrancar y cada hora. Si hay un commit nuevo en
 `main`, se lo baja, lo aplica y se reinicia solo (la tarea programada lo vuelve
 a levantar). Datos, modelo, base de datos y `.env` no se tocan. Si el codigo
 nuevo no arranca tres veces seguidas, vuelve solo al anterior.

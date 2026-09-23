@@ -85,3 +85,32 @@ def test_manual_trade_rejects_a_stop_on_the_wrong_side(env) -> None:
         tracker.follow_manual("XAUUSD", "H1", 1, 4350.0, 4360.0)
     with pytest.raises(ValueError, match="stop"):
         tracker.follow_manual("XAUUSD", "H1", -1, 4350.0, 4340.0)
+
+
+def test_open_signals_can_be_filtered_by_source(env) -> None:
+    _, _, tracker = env
+    tracker.record(_signal())
+    tracker.follow_manual("EURUSD", "H1", -1, 1.1, 1.11)
+    assert len(tracker.open_signals()) == 2
+    assert len(tracker.open_signals(source="bot")) == 1
+    assert len(tracker.open_signals(source="manual")) == 1
+
+
+def test_kill_switch_ignores_unvalidated_signals(env) -> None:
+    """Un setup marcado 'sin ventaja' no promete nada: sus resultados no pueden
+    disparar el interruptor que compara lo real con lo prometido."""
+    import pandas as pd
+    from sqlalchemy import update
+
+    from finance_bot.tracking import signals_table
+
+    _, _, tracker = env
+    for i in range(25):
+        tracker.record(_signal(key=f"k{i}", validated=False, signal_time=pd.Timestamp("2026-09-01", tz="UTC")))
+    with tracker.engine.begin() as conn:
+        conn.execute(
+            update(signals_table).values(
+                status="closed", realized_r=-1.0, hit_tp1=0.0, hit_tp2=0.0, exit_time=pd.Timestamp("2026-09-02")
+            )
+        )
+    assert tracker.evaluate_kill_switch() is None  # 25 perdidas seguidas, pero ninguna validada

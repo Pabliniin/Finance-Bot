@@ -107,3 +107,13 @@ def test_urgent_advice_comes_first(cfg) -> None:
     advice = exits.evaluate(_signal_row(), _view(-8), [event], (101.0, 101.2), cfg, NOW)
     assert [a.urgency for a in advice] == sorted([a.urgency for a in advice], key=lambda u: u != "alta")
     assert advice[0].urgency == "alta"
+
+
+def test_the_signal_bar_itself_never_counts_as_a_reversal(cfg) -> None:
+    """La vela que genero la señal es la ultima cerrada en ese mismo escaneo: no
+    puede a la vez 'girarse en contra'. Solo velas posteriores."""
+    view = _view(-8)  # cierra 11:00
+    same_bar = _signal_row(signal_time=pd.Timestamp("2026-09-22 11:00", tz="UTC"))
+    assert exits.evaluate(same_bar, view, [], (101.0, 101.2), cfg, NOW) == []
+    earlier = _signal_row(signal_time=pd.Timestamp("2026-09-22 10:00", tz="UTC"))
+    assert [a.kind for a in exits.evaluate(earlier, view, [], (101.0, 101.2), cfg, NOW)] == ["reversion"]

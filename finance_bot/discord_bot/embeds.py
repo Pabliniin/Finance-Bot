@@ -122,16 +122,18 @@ def _plan_block(s: Signal, digits: int) -> str:
         rows.append(f"Zona  {zone}")
     else:
         rows.append(f"Zona  {price(s.entry, digits):>{width}}")
-    rows.append(f"Ref.  {price(s.entry, digits):>{width}}   entrada validada")
-    rows.append(f"SL    {price(s.stop, digits):>{width}}   -1R = {price(s.r_price, digits)}")
+    rows.append(f"Ref.  {price(s.entry, digits):>{width}}")
+    rows.append(f"SL    {price(s.stop, digits):>{width}}   1R = {price(s.r_price, digits)}")
     for label, target_price, r, probability in s.targets():
-        note = f"llego {pct(probability)}" if probability is not None else ""
-        if label == "TP1":
-            note += f" · cierra {s.partial:.0%}, stop a entrada"
-        elif r > s.targets_r[1]:
-            note += " · extra, no validado"
-        rows.append(f"{label}   {price(target_price, digits):>{width}}  +{r:g}R  {note}".rstrip())
-    return "```\n" + "\n".join(rows) + "\n```"
+        chance = f"  {pct(probability):>4}" if probability is not None else ""
+        rows.append(f"{label}   {price(target_price, digits):>{width}}  +{r:g}R{chance}".rstrip())
+    # Filas cortas (caben en el movil sin partirse); lo que significan, debajo.
+    extra = " TP3 es extra, fuera del plan." if any(r > s.targets_r[1] for _, _, r, _ in s.targets()) else ""
+    legend = (
+        f"En TP1 cierra {s.partial:.0%} y sube el stop a la entrada.{extra} "
+        "Los % son cuantos casos parecidos llegaron ahi antes del stop; Ref. es el precio con el que se midio."
+    )
+    return "```\n" + "\n".join(rows) + "\n```" + legend
 
 
 def signal_embed(s: Signal, cfg: AppConfig) -> discord.Embed:
@@ -179,9 +181,21 @@ def signal_embed(s: Signal, cfg: AppConfig) -> discord.Embed:
             "📅 Noticias",
             "\n".join(f"{esc(e.currency)} {esc(e.title)} — {when(e.time)}" for e in s.news[:3]),
         )
-    if s.warnings:
-        _add(embed, "⚠️ Ojo", "\n".join(f"• {esc(w)}" for w in s.warnings[:5]))
+    # la nota de tamaño ya va en su campo: no repetirla aqui
+    warnings = [w for w in s.warnings if s.size is None or w != s.size.note]
+    if warnings:
+        _add(embed, "⚠️ Ojo", "\n".join(f"• {esc(w)}" for w in warnings[:5]))
     return _disclaimer(embed, cfg)
+
+
+def emit_status(s: Signal) -> str:
+    """Como se describe un setup en /analisis y en el panel: emitirse con avisos
+    no es "cumplir todo", y hay que decirlo."""
+    if not s.emit:
+        return "⛔ " + "; ".join(s.blockers)
+    if s.warnings:
+        return "📣 se envia con avisos: " + "; ".join(s.warnings)
+    return "✅ cumple todo"
 
 
 def _family_line(votes: list, direction: int) -> str:
@@ -223,7 +237,7 @@ def analysis_embed(a: Analysis, cfg: AppConfig) -> discord.Embed:
     if a.signals:
         rows = []
         for s in a.signals:
-            status = "✅ cumple todo" if s.emit else "⛔ " + "; ".join(s.blockers)
+            status = emit_status(s)
             rows.append(
                 f"**{s.side} {s.tf}** · TP1 {pct(s.p_tp1)} · "
                 f"{'n/d' if s.similar_ev is None else f'{s.similar_ev:+.2f}R'}\n{esc(status)}"
@@ -321,7 +335,7 @@ def panel_embed(
     for symbol, a in analyses.items():
         digits = cfg.instrument(symbol).digits
         head = f"**{price(a.quote[0], digits)}**\n" if a.quote else ""
-        setups = [f"{'✅' if s.emit else '⛔'} {s.side} {s.tf} · {pct(s.p_tp1)}" for s in a.signals[:2]]
+        setups = [f"{emit_status(s)[:1]} {s.side} {s.tf} · {pct(s.p_tp1)}" for s in a.signals[:2]]
         body = "\n".join(setups) if setups else "sin entradas"
         _add(embed, symbol, f"{head}{_bias_line(a)}\n{body}", True)
     if not open_signals.empty:

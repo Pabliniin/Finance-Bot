@@ -158,7 +158,7 @@ def boot_guard_start() -> None:
     if not state.get("previous"):
         return
     state["failed_boots"] = int(state.get("failed_boots", 0)) + 1
-    if state["failed_boots"] > MAX_FAILED_BOOTS:
+    if state["failed_boots"] >= MAX_FAILED_BOOTS:  # al tercer arranque fallido, se revierte
         rollback()
         return
     _write_state(state)

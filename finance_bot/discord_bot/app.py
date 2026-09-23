@@ -230,7 +230,11 @@ class FinanceBot(discord.Client):
         if open_signals.empty or self.service.feed is None:
             return out
         for symbol in open_signals["symbol"].unique():
-            quote = await self.run_blocking(self.service.feed.quote, symbol)
+            try:
+                quote = await self.run_blocking(self.service.feed.quote, symbol)
+            except Exception:  # noqa: BLE001 - sin cotizacion no hay R en vivo, pero el panel sigue
+                logger.warning("sin cotizacion de %s para el R en vivo", symbol)
+                continue
             for _, s in open_signals[open_signals["symbol"] == symbol].iterrows():
                 value = r_now(float(s["entry"]), float(s["r_price"]), int(s["direction"]), quote)
                 if value is not None:
@@ -337,7 +341,7 @@ class FinanceBot(discord.Client):
         return embeds.analysis_embed(analysis, service.cfg)
 
     async def stats_embed(self, period: str) -> discord.Embed:
-        days = {"7d": 7, "30d": 30, "90d": 90, "todo": None}.get(period, 30)
+        days = {"24h": 1, "7d": 7, "30d": 30, "90d": 90, "todo": None}.get(period, 30)
         since = datetime.now(UTC) - timedelta(days=days) if days else None
         closed = await self.run_blocking(self.service.tracker.closed_signals, since)
         scoreboard = await self.run_blocking(self.service.tracker.advice_scoreboard)
@@ -415,10 +419,11 @@ class FinanceBot(discord.Client):
             return
         for signal in result.new_signals:
             await self.send(embeds.signal_embed(signal, service.cfg), signal_view(signal.symbol), ping=True)
+        # "avisame cuando cerrar": todo lo que pide actuar sobre una operacion abierta avisa
         for advice in result.advice:
-            await self.send(embeds.advice_embed(advice, service.cfg), ping=advice.urgency == "alta")
+            await self.send(embeds.advice_embed(advice, service.cfg), ping=True)
         for event in result.events:
-            await self.send(embeds.event_embed(event, service.cfg))
+            await self.send(embeds.event_embed(event, service.cfg), ping=True)
         if result.kill_switch_reason:
             await self.send(
                 embeds.simple_embed(

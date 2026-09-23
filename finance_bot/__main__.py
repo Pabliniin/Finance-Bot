@@ -108,6 +108,7 @@ def _cmd_invitar(args: argparse.Namespace) -> int:
         | (1 << 14)  # incrustar embeds
         | (1 << 15)  # adjuntar ficheros
         | (1 << 16)  # leer el historial
+        | (1 << 17)  # mencionar @here al avisar de una señal
     )
     print("1) Abre este enlace y elige tu servidor:\n")
     print(

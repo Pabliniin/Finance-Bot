@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pandas as pd
 import pytest
 
 from finance_bot.config import Secrets
@@ -70,3 +71,17 @@ def test_non_ipc_none_is_not_retried(feed) -> None:
     fake._error = (-2, "Invalid params")
     assert mt5_feed.quote("XAUUSD") is None
     assert fake.initialized == 1  # sin reconexion: no era un fallo de conexion
+
+
+def test_no_new_bars_means_complete_until_stays_put(feed, monkeypatch) -> None:
+    """Sin velas nuevas (terminal abierto pero sin broker, o mercado cerrado)
+    los datos NO estan completos hasta 'ahora', sino hasta donde estaban."""
+    from datetime import UTC, datetime
+
+    mt5_feed, fake = feed
+    fake.fail_first = False
+    fake.copy_rates_from_pos = lambda *a: []  # type: ignore[attr-defined]
+    since = datetime(2026, 9, 22, 10, 0, tzinfo=UTC)
+    bars, complete_until = mt5_feed.fetch_m1("XAUUSD", since)
+    assert bars.empty
+    assert complete_until == pd.Timestamp(since)

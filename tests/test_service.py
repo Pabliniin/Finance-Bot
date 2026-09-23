@@ -177,3 +177,23 @@ def test_delayed_feed_failure_is_a_real_error(service: BotService) -> None:
     service.feed = BrokenDelayed()  # type: ignore[assignment]
     with pytest.raises(LiveFeedError):
         service.refresh_with_fallback()
+
+
+def test_full_live_days_are_protected_from_the_nightly_download(service: BotService) -> None:
+    """Un dia entero escrito por MT5 no debe ser pisado por Dukascopy por la noche."""
+    from datetime import UTC, datetime, timedelta
+
+    from tests.conftest import random_walk_bars
+
+    day_full = (datetime.now(UTC) - timedelta(days=3)).date()
+    day_partial = (datetime.now(UTC) - timedelta(days=2)).date()
+    full = random_walk_bars(1380, freq="1min", start=f"{day_full} 00:00")
+    partial = random_walk_bars(200, freq="1min", start=f"{day_partial} 08:00")
+    service.md.m1_store.write("XAUUSD", full)
+    service.md.m1_store.write("XAUUSD", partial)
+
+    protected = service.protect_live_days("XAUUSD")
+
+    assert day_full.isoformat() in protected
+    assert day_partial.isoformat() not in protected  # con huecos, que lo complete Dukascopy
+    assert day_full.isoformat() in service.md.m1_store.fetched("XAUUSD")

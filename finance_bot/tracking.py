@@ -137,9 +137,16 @@ class Tracker:
         with self.engine.connect() as conn:
             return conn.execute(select(signals_table.c.key).where(signals_table.c.key == key)).first() is not None
 
-    def open_signals(self) -> pd.DataFrame:
+    def open_signals(self, source: str | None = None) -> pd.DataFrame:
+        """Abiertas. Con source="bot" solo las del modelo (las filas antiguas, sin
+        columna, son del bot); con "manual" solo las que sigues a mano."""
+        query = select(signals_table).where(signals_table.c.status == "open")
+        if source == "bot":
+            query = query.where((signals_table.c.source == "bot") | (signals_table.c.source.is_(None)))
+        elif source is not None:
+            query = query.where(signals_table.c.source == source)
         with self.engine.connect() as conn:
-            return pd.read_sql(select(signals_table).where(signals_table.c.status == "open"), conn)
+            return pd.read_sql(query, conn)
 
     def closed_signals(self, since: datetime | None = None, source: str = "bot") -> pd.DataFrame:
         """Por defecto solo las señales del bot: las operaciones que sigues a
@@ -405,7 +412,10 @@ class Tracker:
         if active:
             return None
         ks = self.cfg.risk.kill_switch
+        # Solo señales validadas: el interruptor compara resultados con lo que el
+        # modelo prometio. Un setup marcado "sin ventaja" no promete nada.
         closed = self.closed_signals()
+        closed = closed[closed["validated"].astype(bool)] if len(closed) else closed
         if len(closed) < ks.min_signals:
             return None
         r = closed["realized_r"].to_numpy(dtype=float)

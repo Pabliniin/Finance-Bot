@@ -146,7 +146,8 @@ def test_signal_shows_entry_zone_and_every_target(cfg) -> None:
     assert "4,336.90 – 4,341.00" in text  # rango, no un unico precio
     assert "TP1" in text and "TP2" in text and "TP3" in text and "SL" in text
     assert "4,402.50" in text  # TP3 = entrada + 3R
-    assert "extra, no validado" in text  # el objetivo de mas queda marcado
+    assert "TP3 es extra" in text  # el objetivo de mas queda marcado como fuera del plan
+    assert "entrada validada" not in text  # no contradice la cabecera "SIN VENTAJA VALIDADA"
 
 
 def test_signal_without_zone_falls_back_to_one_price(cfg) -> None:

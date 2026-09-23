@@ -50,6 +50,8 @@ MAX_EMIT_DELAY = {
 }
 H1_HISTORY_DAYS = 1100  # D1: ~700 sesiones -> EMA200 y percentiles de ATR estables
 M1_HISTORY_DAYS = 40  # M15: ~2.500 velas
+# Con MT5 y mercado abierto, mas de esto sin velas nuevas es un terminal sin conexion.
+STALE_REALTIME = timedelta(minutes=15)
 
 
 @dataclass
@@ -271,6 +273,12 @@ class SignalEngine:
         warnings: list[str] = []
         if not realtime:
             warnings.append("Fuente sin tiempo real (Dukascopy): M15 desactivado y datos con hasta ~1h de retraso.")
+        elif complete_until is not None and now - complete_until.to_pydatetime() > STALE_REALTIME:
+            minutes = int((now - complete_until.to_pydatetime()).total_seconds() // 60)
+            warnings.append(
+                f"MT5 lleva {minutes} min sin velas nuevas: ¿terminal sin conexion con el broker o mercado cerrado? "
+                "Con datos viejos no se emiten señales."
+            )
 
         start = now - timedelta(days=H1_HISTORY_DAYS)
         m1_start = now - timedelta(days=M1_HISTORY_DAYS)

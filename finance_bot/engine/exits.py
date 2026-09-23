@@ -93,7 +93,11 @@ def evaluate(
             )
         )
 
-    if view is not None:
+    signal_time = pd.Timestamp(signal["signal_time"])
+    signal_time = signal_time.tz_localize("UTC") if signal_time.tzinfo is None else signal_time.tz_convert("UTC")
+    # El contexto solo cuenta con velas posteriores a la de la señal: la misma
+    # vela que la genero no puede a la vez "girarse en contra".
+    if view is not None and pd.Timestamp(view.bar_close) > signal_time:
         against = -view.score * direction  # votos netos EN CONTRA de la operacion
         if against >= REVERSAL_SCORE:
             add(
@@ -126,8 +130,6 @@ def evaluate(
             )
 
     max_hours = float(signal["max_hours"])
-    signal_time = pd.Timestamp(signal["signal_time"])
-    signal_time = signal_time.tz_localize("UTC") if signal_time.tzinfo is None else signal_time.tz_convert("UTC")
     hours_open = (pd.Timestamp(now).tz_convert("UTC") - signal_time).total_seconds() / 3600
     remaining = max_hours - hours_open
     if 0 < remaining <= max_hours * TIME_WARNING_FRACTION:
