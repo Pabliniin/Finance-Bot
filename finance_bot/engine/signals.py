@@ -507,9 +507,14 @@ class SignalEngine:
         max_delay = MAX_EMIT_DELAY.get(s.tf, timedelta(minutes=30))
         if age > max_delay:
             minutes = int(age.total_seconds() // 60)
-            s.blockers.append(
-                f"llega tarde: la vela cerro hace {minutes} min (maximo {int(max_delay.total_seconds() // 60)} min "
-                "para que sea la operacion que se valido)"
+            # El backtest entra justo al cierre de la vela. En estricto, una señal
+            # que llega tarde ya no es la operacion validada y no se emite. En
+            # informativo se envia igual con el aviso: el precio y el stop son los
+            # de AHORA (no los de la vela vieja), asi que la operacion sigue siendo
+            # tomable; solo pierde el respaldo del backtest.
+            strict_rule(
+                f"la vela cerro hace {minutes} min: entra solo si el precio sigue en la zona; "
+                "el backtest entraba justo al cierre, asi que esta ya no es la operacion validada"
             )
         if s.size is not None and not s.size.fits:
             s.warnings.append(s.size.note)

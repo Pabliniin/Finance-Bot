@@ -115,11 +115,18 @@ def test_informative_mode_turns_validation_and_ev_into_warnings(cfg) -> None:
     assert any("SIN VENTAJA VALIDADA" in w for w in s.warnings)
 
 
-def test_late_signal_is_not_emitted(cfg) -> None:
+def test_late_signal_blocks_in_strict_but_warns_in_informative(cfg) -> None:
     engine = SignalEngine(cfg, md=None, artifacts=None)  # type: ignore[arg-type]
-    s = _signal(tf="H1")
-    engine._apply_gates(s, "strict", datetime(2026, 9, 22, 11, 30, tzinfo=UTC))  # vela cerro a las 10:00
-    assert any("llega tarde" in b for b in s.blockers)
+    late_now = datetime(2026, 9, 22, 11, 30, tzinfo=UTC)  # H1 cerro a las 10:00, 90 min tarde
+
+    strict = _signal(tf="H1")
+    engine._apply_gates(strict, "strict", late_now)
+    assert not strict.emit and any("la vela cerro" in b for b in strict.blockers)
+
+    # en informativo la señal se envia igual, con el aviso: la puede tomar el usuario
+    info = _signal(tf="H1", validated=False, similar_ev=0.10)
+    engine._apply_gates(info, "informative", late_now)
+    assert info.emit and any("la vela cerro" in w for w in info.warnings)
 
 
 def test_news_blackout_blocks_intraday(cfg) -> None:
@@ -169,9 +176,11 @@ def test_informative_mode_shows_setups_below_threshold_with_a_warning(cfg) -> No
     assert any("casos similares" in w for w in low.warnings)
     assert any("SIN VENTAJA VALIDADA" in w for w in low.warnings)
 
-    late = _signal(validated=False, signal_time=pd.Timestamp("2026-09-22 09:00", tz="UTC"))
-    engine._apply_gates(late, "informative", now)
-    assert not late.emit and any("llega tarde" in b for b in late.blockers)
+    # lo unico que sigue bloqueando en informativo es lo peligroso: una noticia de alto impacto encima
+    event = EconomicEvent(now + timedelta(hours=1), "USD", "CPI", "High", "", "")
+    blocked = _signal(validated=False, news=[event])
+    engine._apply_gates(blocked, "informative", now)
+    assert not blocked.emit and any("noticia" in b for b in blocked.blockers)
 
     strict_low = _signal(p_tp1=0.48, threshold=0.65)
     engine._apply_gates(strict_low, "strict", now)
