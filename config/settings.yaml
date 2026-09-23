@@ -36,6 +36,7 @@ instruments:
 #  - sl_atr_min / sl_atr_max: el stop se coloca bajo/sobre la estructura reciente,
 #    pero nunca a menos de sl_atr_min ni a mas de sl_atr_max ATR del precio
 timeframes:
+  M1:  {max_bars: 20, sl_atr_min: 1.2, sl_atr_max: 3.0, swing_lookback: 8}   # scalping: stops algo mas anchos en ATR (el ruido de M1)
   M15: {max_bars: 32, sl_atr_min: 1.0, sl_atr_max: 2.5, swing_lookback: 8}
   H1:  {max_bars: 48, sl_atr_min: 1.0, sl_atr_max: 2.5, swing_lookback: 8}
   H4:  {max_bars: 30, sl_atr_min: 1.0, sl_atr_max: 2.5, swing_lookback: 6}
@@ -68,13 +69,15 @@ signals:
   min_confluence: 8              # votos netos minimos a favor (sobre 20) para emitir una señal:
                                  # sube para menos señales y mas fuertes, baja para ver mas
   one_signal_per_symbol: true    # solo la mejor señal de cada instrumento por escaneo
+  cooldown_minutes: 15           # tras una señal, no se emite otra del mismo instrumento en este rato
+                                 # (evita que M1 sature; subelo para menos señales)
   news_blackout_hours: {M15: 2, H1: 3, H4: 0, D1: 0}   # sin señales intradia cerca de noticias de alto impacto
   news_currencies: [USD, EUR]
 
 # Sesiones (UTC) en las que se aceptan señales intradia. Fuera de ellas la
 # liquidez es menor y los costes relativos se disparan.
 sessions_utc:
-  intraday_timeframes: [M15, H1]
+  intraday_timeframes: [M1, M15, H1]
   allowed_hours: [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
 
 data:

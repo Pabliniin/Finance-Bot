@@ -95,6 +95,7 @@ def _disclaimer(embed: discord.Embed, cfg: AppConfig) -> discord.Embed:
 def _plain(text: str) -> str:
     """Sin el marcado de Discord, para leerlo comodo en una terminal."""
     text = re.sub(r"\\([*_~`>|-])", r"\1", text)  # deshace los escapes de escape_markdown
+    text = re.sub(r"^#{1,3}\s*", "", text, flags=re.MULTILINE)  # encabezados grandes -> texto normal
     return text.replace("**", "").replace("```", "").replace("`", "")
 
 
@@ -232,7 +233,7 @@ def analysis_embed(a: Analysis, cfg: AppConfig) -> discord.Embed:
         color=color,
         timestamp=datetime.now(UTC),
     )
-    lines = [_view_line(a.views[tf], digits) for tf in ("D1", "H4", "H1", "M15") if tf in a.views]
+    lines = [_view_line(a.views[tf], digits) for tf in ("D1", "H4", "H1", "M15", "M1") if tf in a.views]
     _add(embed, "Temporalidades", "\n".join(lines))
     if a.signals:
         rows = []
@@ -256,11 +257,13 @@ def analysis_embed(a: Analysis, cfg: AppConfig) -> discord.Embed:
 
 
 def advice_embed(advice: ExitAdvice, cfg: AppConfig) -> discord.Embed:
-    icon = "🚨" if advice.urgency == "alta" else "⏳"
-    now_r = f" · vas **{advice.r_now:+.2f}R**" if advice.r_now is not None else ""
+    """Aviso de gestion de una operacion abierta. Encabezado grande para que
+    destaque frente a una señal nueva: es algo que hay que mirar AHORA."""
+    icon = "🚨🚨" if advice.urgency == "alta" else "⏳"
+    now_r = f"  ·  vas **{advice.r_now:+.2f}R**" if advice.r_now is not None else ""
     embed = discord.Embed(
-        title=f"{icon} {advice.side} {advice.symbol} {advice.tf} — {advice.headline}",
-        description=f"{esc(advice.detail)}{now_r}",
+        title=f"{icon} GESTIONA tu {advice.side} {advice.symbol} {advice.tf}",
+        description=f"## {esc(advice.headline)}{now_r}\n{esc(advice.detail)}",
         color=RED if advice.urgency == "alta" else AMBER,
         timestamp=datetime.now(UTC),
     )
@@ -269,28 +272,31 @@ def advice_embed(advice: ExitAdvice, cfg: AppConfig) -> discord.Embed:
 
 
 def event_embed(event: dict, cfg: AppConfig) -> discord.Embed:
+    """TP1 / cierre de una operacion. Encabezado grande (## ) y el resultado en
+    R bien visible: son los mensajes que el usuario no se puede perder."""
     symbol, tf = event["symbol"], event["tf"]
     side = "COMPRA" if event["direction"] > 0 else "VENTA"
     if event["type"] == "tp1":
         embed = discord.Embed(
-            title=f"🎯 TP1 · {side} {symbol} {tf}",
-            description=f"Cierra {event.get('partial', 0.5):.0%} y mueve el stop a la entrada. "
-            f"Tardo {hours_text(event.get('hours'))}.",
+            title=f"🎯 TP1 ALCANZADO · {side} {symbol} {tf}",
+            description=f"## 🎯 Cierra {event.get('partial', 0.5):.0%} y sube el stop a la entrada\n"
+            f"Tu operacion ha tocado el primer objetivo (en {hours_text(event.get('hours'))}). "
+            "El resto sigue hacia TP2 con el riesgo ya cubierto.",
             color=GREEN,
             timestamp=datetime.now(UTC),
         )
         return _disclaimer(embed, cfg)
     reasons = {
-        "stop": ("🛑 Stop", RED),
-        "tp2": ("🏁 TP2", GREEN),
-        "tp1_be": ("🤝 Cerrada en la entrada tras TP1", AMBER),
-        "time": ("⌛ Cerrada por tiempo", GREY),
+        "stop": ("🛑 STOP", "🛑", RED),
+        "tp2": ("🏁 TP2 · OBJETIVO FINAL", "🏁", GREEN),
+        "tp1_be": ("🤝 CERRADA EN LA ENTRADA (tras TP1)", "🤝", AMBER),
+        "time": ("⌛ CERRADA POR TIEMPO", "⌛", GREY),
     }
-    title, color = reasons.get(str(event.get("reason")), ("🔚 Cerrada", GREY))
+    title, big, color = reasons.get(str(event.get("reason")), ("🔚 CERRADA", "🔚", GREY))
     r = float(event.get("realized_r", 0.0))
     embed = discord.Embed(
-        title=f"{title} · {side} {symbol} {tf} · {r:+.2f}R",
-        description=f"Siguiendo el plan, en {hours_text(event.get('hours'))}.",
+        title=f"{title} · {side} {symbol} {tf}",
+        description=f"## {big} Resultado: {r:+.2f}R\nSiguiendo el plan, en {hours_text(event.get('hours'))}.",
         color=color if r >= 0 else RED,
         timestamp=datetime.now(UTC),
     )
@@ -311,7 +317,9 @@ def event_embed(event: dict, cfg: AppConfig) -> discord.Embed:
 
 def _bias_line(a: Analysis) -> str:
     parts = [
-        f"{tf} {BIAS_ICON[a.views[tf].bias]}{a.views[tf].score:+d}" for tf in ("D1", "H4", "H1", "M15") if tf in a.views
+        f"{tf} {BIAS_ICON[a.views[tf].bias]}{a.views[tf].score:+d}"
+        for tf in ("D1", "H4", "H1", "M15", "M1")
+        if tf in a.views
     ]
     return " · ".join(parts) if parts else "sin datos"
 

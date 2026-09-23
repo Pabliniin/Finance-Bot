@@ -131,6 +131,11 @@ class Tracker:
         raw = self.get_setting(f"mute_{symbol}")
         return datetime.fromisoformat(raw) if raw else None
 
+    def last_signal_at(self, symbol: str) -> datetime | None:
+        """Cuando se emitio la ultima señal de este instrumento (para el cooldown)."""
+        raw = self.get_setting(f"last_signal_{symbol}")
+        return datetime.fromisoformat(raw) if raw else None
+
     # --- señales ----------------------------------------------------------------
 
     def is_known(self, key: str) -> bool:

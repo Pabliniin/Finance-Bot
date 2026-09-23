@@ -197,3 +197,16 @@ def test_full_live_days_are_protected_from_the_nightly_download(service: BotServ
     assert day_full.isoformat() in protected
     assert day_partial.isoformat() not in protected  # con huecos, que lo complete Dukascopy
     assert day_full.isoformat() in service.md.m1_store.fetched("XAUUSD")
+
+
+def test_cooldown_blocks_a_second_signal_too_soon(service: BotService) -> None:
+    """Tras una señal, el instrumento descansa el cooldown: evita que M1 sature."""
+    from datetime import UTC, datetime, timedelta
+
+    now = datetime.now(UTC)
+    service.tracker.set_setting("last_signal_XAUUSD", now.isoformat())
+    last = service.tracker.last_signal_at("XAUUSD")
+    assert last is not None
+    cooldown = service.cfg.signals.cooldown_minutes
+    assert now - last < timedelta(minutes=cooldown)  # dentro del cooldown
+    assert service.tracker.last_signal_at("EURUSD") is None  # otro instrumento, sin cooldown

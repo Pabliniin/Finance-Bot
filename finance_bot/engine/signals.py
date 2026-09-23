@@ -43,6 +43,7 @@ LADDER_R = (0.5, 1.0, 1.5, 2.0, 3.0)
 # (datos con retraso, o un bloqueo que se levanta horas despues) ya no es la
 # misma operacion que se valido: no se emite.
 MAX_EMIT_DELAY = {
+    "M1": timedelta(minutes=2),
     "M15": timedelta(minutes=10),
     "H1": timedelta(minutes=20),
     "H4": timedelta(minutes=60),
@@ -50,6 +51,14 @@ MAX_EMIT_DELAY = {
 }
 H1_HISTORY_DAYS = 1100  # D1: ~700 sesiones -> EMA200 y percentiles de ATR estables
 M1_HISTORY_DAYS = 40  # M15: ~2.500 velas
+# Para analizar la temporalidad M1 no hacen falta 40 dias de velas (serian 57.000
+# y calcular indicadores sobre todas cada minuto es lento): con las ultimas ~3.000
+# (unas 50 h) sobran para EMA200 y los percentiles de ATR.
+M1_ANALYSIS_BARS = 3000
+# El historico fuera de muestra no tiene filas M1 (el modelo se valido en M15+).
+# Para dar probabilidad y expectativa a una señal M1 se usan como proxy los casos
+# de M15, la temporalidad mas parecida. Va SIEMPRE marcado como proxy.
+SIMILAR_PROXY = {"M1": "M15"}
 # Con MT5 y mercado abierto, mas de esto sin velas nuevas es un terminal sin conexion.
 STALE_REALTIME = timedelta(minutes=15)
 
@@ -219,19 +228,22 @@ class Artifacts:
 def similar_cases(
     history: pd.DataFrame, symbol: str, tf: str, direction: int, p: float, min_n: int
 ) -> tuple[pd.DataFrame, str]:
+    # M1 no tiene historico propio: se usa M15 como proxy (marcado en la etiqueta).
+    lookup_tf = SIMILAR_PROXY.get(tf, tf)
+    proxy = f" · proxy {lookup_tf} (sin historico {tf} propio)" if lookup_tf != tf else ""
     near = (history["p_tp1"] - p).abs() <= 0.05
-    same = (history["symbol"] == symbol) & (history["tf"] == tf)
+    same = (history["symbol"] == symbol) & (history["tf"] == lookup_tf)
     tiers = [
-        (same & (history["direction"] == direction) & near, f"{symbol} {tf}, misma direccion y probabilidad (±5 pp)"),
-        (same & near, f"{symbol} {tf}, probabilidad similar (±5 pp)"),
-        ((history["tf"] == tf) & near, f"{tf} en ambos instrumentos, probabilidad similar"),
-        (same, f"todas las señales {symbol} {tf}"),
+        (same & (history["direction"] == direction) & near, f"{symbol} {lookup_tf}, misma direccion y prob. (±5 pp)"),
+        (same & near, f"{symbol} {lookup_tf}, probabilidad similar (±5 pp)"),
+        ((history["tf"] == lookup_tf) & near, f"{lookup_tf} en ambos instrumentos, probabilidad similar"),
+        (same, f"todas las señales {symbol} {lookup_tf}"),
     ]
     for mask, label in tiers:
         subset = history[mask]
         if len(subset) >= min_n:
-            return subset, label
-    return history[tiers[-1][0]], tiers[-1][1]
+            return subset, label + proxy
+    return history[tiers[-1][0]], tiers[-1][1] + proxy
 
 
 def probability_ladder(cases: pd.DataFrame) -> list[LadderStep]:
@@ -269,10 +281,13 @@ class SignalEngine:
         now = now or datetime.now(UTC)
         symbols = list(self.cfg.instruments)
         other = next((s for s in symbols if s != symbol), None)
-        timeframes = [tf for tf in self.cfg.timeframes if realtime or tf != "M15"]
+        # M1 y M15 solo con tiempo real (MT5): el respaldo Dukascopy llega con ~1h de retraso.
+        timeframes = [tf for tf in self.cfg.timeframes if realtime or tf not in ("M1", "M15")]
         warnings: list[str] = []
         if not realtime:
-            warnings.append("Fuente sin tiempo real (Dukascopy): M15 desactivado y datos con hasta ~1h de retraso.")
+            warnings.append(
+                "Fuente sin tiempo real (Dukascopy): M1 y M15 desactivados y datos con hasta ~1h de retraso."
+            )
         elif complete_until is not None and now - complete_until.to_pydatetime() > STALE_REALTIME:
             minutes = int((now - complete_until.to_pydatetime()).total_seconds() // 60)
             warnings.append(
@@ -288,6 +303,10 @@ class SignalEngine:
             if other
             else None
         )
+        # M1: recortar a las ultimas velas para no calcular indicadores sobre decenas de miles cada minuto
+        for group in (bars, other_bars):
+            if group and "M1" in group and len(group["M1"]) > M1_ANALYSIS_BARS:
+                group["M1"] = group["M1"].tail(M1_ANALYSIS_BARS)
         feats = build_features(bars, other_bars)
         eurusd = self._eurusd_rate(bars if symbol == "EURUSD" else other_bars)
 

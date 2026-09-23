@@ -64,3 +64,15 @@ def test_validate_bars_flags_inconsistencies() -> None:
     broken = m1.copy()
     broken.iloc[1, broken.columns.get_loc("high")] = 0.5
     assert any("high" in issue for issue in validate_bars(broken))
+
+
+def test_m1_resample_is_identity_with_close_time() -> None:
+    """M1 es la base: resamplear a M1 devuelve las mismas velas, con close_time."""
+    from finance_bot.data.bars import resample
+
+    idx = pd.date_range("2026-09-23 10:00", periods=6, freq="1min", tz="UTC")
+    m1 = pd.DataFrame({"open": 1.0, "high": 1.2, "low": 0.8, "close": 1.1, "volume": 3.0}, index=idx)
+    out = resample(m1, "M1", base_minutes=1)
+    assert len(out) == 6
+    assert (out["close_time"] == out.index + pd.Timedelta(minutes=1)).all()
+    assert list(out["close"]) == [1.1] * 6

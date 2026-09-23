@@ -196,3 +196,46 @@ def test_informative_mode_shows_setups_below_threshold_with_a_warning(cfg) -> No
     strict_low = _signal(p_tp1=0.48, threshold=0.65)
     engine._apply_gates(strict_low, "strict", now)
     assert not strict_low.emit  # en estricto el umbral sigue bloqueando
+
+
+def test_m1_signal_uses_m15_history_as_labeled_proxy() -> None:
+    """M1 no tiene historico propio: similar_cases usa M15 y lo marca."""
+    h = _history()
+    h["tf"] = "M15"  # solo hay M15 en el historial
+    cases, scope = similar_cases(h, "XAUUSD", "M1", 1, 0.45, min_n=5)
+    assert "proxy M15" in scope and "sin historico M1" in scope
+    assert (cases["tf"] == "M15").all()
+
+
+def test_m1_is_not_in_the_model_tf_onehots() -> None:
+    """El modelo se entreno sin M1: una señal M1 no debe introducir un feature
+    tf_M1 (romperia el modelo); cae como 'ninguna TF conocida'."""
+    from finance_bot.engine.candidates import model_features
+    from finance_bot.strategies.triggers import TRIGGER_KEYS
+    from finance_bot.strategies.voters import VOTER_KEYS
+
+    row = {
+        "tf": "M1",
+        "symbol": "XAUUSD",
+        "direction": 1,
+        "close_time": pd.Timestamp("2026-09-23 10:00", tz="UTC"),
+        "atr": 1.0,
+        "adx": 20.0,
+        "atr_pct_rank": 0.5,
+        "rsi": 55.0,
+        "ema200": 99.0,
+        "close": 100.0,
+        "ema200_slope_atr": 0.1,
+        "roc10_atr": 0.1,
+        "bb_upper": 101.0,
+        "bb_mid": 100.0,
+        "resistance": 102.0,
+        "support": 98.0,
+        "sl_distance": 1.0,
+        "htf_rsi": 50.0,
+    }
+    row.update({f"vote_{k}": 0 for k in VOTER_KEYS})
+    row.update({f"trig_{k}": 0 for k in TRIGGER_KEYS})
+    feats = model_features(pd.DataFrame([row]))
+    assert "tf_M1" not in feats.columns
+    assert feats[["tf_M15", "tf_H1", "tf_H4", "tf_D1"]].iloc[0].sum() == 0  # ninguna TF conocida

@@ -143,7 +143,7 @@ def model_features(cand: pd.DataFrame) -> pd.DataFrame:
         out[f"sym_{sym}"] = (cand["symbol"] == sym).astype(float)
     out["is_long"] = (d > 0).astype(float)
 
-    intraday = cand["tf"].isin(["M15", "H1"])
+    intraday = cand["tf"].isin(["M1", "M15", "H1"])
     session = session_of(cand["close_time"].dt.hour)
     for s in SESSIONS:
         out[f"session_{s}"] = ((session == s) & intraday).astype(float)

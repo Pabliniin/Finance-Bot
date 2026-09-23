@@ -16,8 +16,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = PROJECT_ROOT / "config" / "settings.yaml"
 
-Timeframe = Literal["M15", "H1", "H4", "D1"]
-TIMEFRAMES: tuple[Timeframe, ...] = ("M15", "H1", "H4", "D1")
+Timeframe = Literal["M1", "M15", "H1", "H4", "D1"]
+TIMEFRAMES: tuple[Timeframe, ...] = ("M1", "M15", "H1", "H4", "D1")
 
 
 class CostSpec(BaseModel):
@@ -75,6 +75,9 @@ class SignalsConfig(BaseModel):
     min_confluence: int = Field(default=8, ge=0, le=20)
     # Emitir solo la mejor señal de cada instrumento por escaneo (no varias a la vez).
     one_signal_per_symbol: bool = True
+    # Tras una señal, no se emite otra del mismo instrumento en estos minutos (evita
+    # que M1 sature). 0 lo desactiva.
+    cooldown_minutes: int = Field(default=15, ge=0)
 
 
 class SessionsConfig(BaseModel):

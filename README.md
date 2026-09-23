@@ -1,6 +1,6 @@
 # Finance Bot — señales XAUUSD / EURUSD por Discord
 
-Bot de Discord que analiza **XAUUSD (oro)** y **EURUSD** en **M15, H1, H4 y D1** con
+Bot de Discord que analiza **XAUUSD (oro)** y **EURUSD** en **M1, M15, H1, H4 y D1** con
 20 estrategias que votan y 8 estrategias de entrada, y estima con un modelo
 calibrado **fuera de muestra** la probabilidad real de que cada operación llegue
 a su objetivo antes que al stop. Te dice la temporalidad, la duración esperada,

@@ -221,8 +221,14 @@ class BotService:
                     continue
                 result.analyses[symbol] = analysis
                 muted = self.tracker.muted_until(symbol)
+                # Cooldown: tras una señal, este instrumento descansa un rato (evita
+                # que M1 sature con una señal por minuto).
+                cooldown = self.cfg.signals.cooldown_minutes
+                last = self.tracker.last_signal_at(symbol)
+                if cooldown and last is not None and now - last < timedelta(minutes=cooldown):
+                    continue
                 # De todas las temporalidades que disparan a la vez, se emite solo la
-                # MEJOR de cada instrumento (mas probable): nada de H1+H4+D1 de golpe.
+                # MEJOR de cada instrumento (mas probable): nada de M1+H1+H4 de golpe.
                 candidates = [s for s in analysis.signals if s.emit and not self.tracker.is_known(s.key)]
                 candidates.sort(key=lambda s: s.p_tp1, reverse=True)
                 if self.cfg.signals.one_signal_per_symbol:
@@ -239,6 +245,7 @@ class BotService:
                         )
                         continue
                     self.tracker.record(signal)
+                    self.tracker.set_setting(f"last_signal_{symbol}", now.isoformat())
                     result.new_signals.append(signal)
                     open_now += 1
             try:
