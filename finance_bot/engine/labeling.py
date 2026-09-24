@@ -164,8 +164,10 @@ def label_candidates(
 
         mfe_end = k_sl if k_sl < n else n
         mfe_r = float(max(excursion[:mfe_end].max(initial=0.0), 0.0) / r)
-        mae_end = k1 if hit1 else n
-        mae_r = float(min(adverse[:mae_end].max(initial=0.0) / r, 1.0 + slip / r)) if mae_end else 0.0
+        # Hasta e INCLUYENDO la vela donde toca TP1: si toca en la vela de entrada
+        # (k1 = 0), su excursion adversa cuenta igual (antes se registraba 0).
+        mae_end = (k1 + 1) if hit1 else n
+        mae_r = float(min(adverse[:mae_end].max(initial=0.0) / r, 1.0 + slip / r))
 
         # Resultado si salta el stop (al nivel o peor si la vela abre mas alla, mas
         # deslizamiento) y resultado a precio de mercado al final de la ventana.
