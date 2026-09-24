@@ -18,6 +18,97 @@ def _ladder() -> list[LadderStep]:
     return [LadderStep(r, 0.5, 0.4, 0.6) for r in (0.5, 1.0, 1.5, 2.0, 3.0)]
 
 
+def _within_discord_limits(embed) -> None:
+    """Discord rechaza un embed de mas de 6000 chars, con mas de 25 campos o con
+    un campo de mas de 1024: eso seria un mensaje que nunca llega al usuario."""
+    assert len(embed) <= 6000
+    assert len(embed.fields) <= embeds.MAX_FIELDS
+    assert all(len(f.value) <= embeds.FIELD_LIMIT for f in embed.fields)
+    assert all(len(f.name) <= 256 for f in embed.fields)
+    embeds.to_text(embed)  # el volcado a texto plano tampoco revienta
+
+
+def test_all_embed_types_render_within_discord_limits(cfg) -> None:
+    """Cada mensaje que el bot puede enviar se renderiza sin reventar y dentro de
+    los limites de Discord, con datos representativos."""
+    now = datetime(2026, 9, 24, 12, tzinfo=UTC)
+    _within_discord_limits(embeds.help_embed(cfg, validated=0, model_ready=True))
+    _within_discord_limits(embeds.help_embed(cfg, validated=2, model_ready=True))
+    _within_discord_limits(embeds.help_embed(cfg, validated=0, model_ready=False))
+    _within_discord_limits(embeds.simple_embed("Titulo", "Cuerpo del mensaje."))
+
+    _within_discord_limits(embeds.calendar_embed([], cfg, failed=True))
+    _within_discord_limits(embeds.calendar_embed([], cfg))
+    events = [EconomicEvent(now, "USD", f"Dato {i}", "High", "", "") for i in range(30)]
+    _within_discord_limits(embeds.calendar_embed(events, cfg))
+
+    health = {
+        "kill_switch": (True, "drawdown real de 13R"),
+        "model": {"trained_at": "2026-09-22T13:00:00", "test_evaluated": False, "selection": {}},
+        "feed": "MT5",
+        "last_scan": now,
+        "mode": "informative",
+        "data": {s: {"h1_until": now, "m1_until": now, "complete_until": now} for s in cfg.instruments},
+        "calendar_ok": True,
+        "open_signals": 3,
+        "last_error": "algo fallo hace un rato",
+    }
+    _within_discord_limits(embeds.status_embed(health, cfg))
+    health["model"] = None
+    _within_discord_limits(embeds.status_embed(health, cfg))
+
+    _within_discord_limits(embeds.validation_embed(None, cfg))
+    validation = {
+        "generated_at": "2026-09-22T13:00:00",
+        "test_evaluated": True,
+        "selection": {"XAUUSD H1": "equilibrado"},
+        "plans": {
+            "equilibrado": {
+                "threshold_tp1": 0.55,
+                "groups": {
+                    "XAUUSD H1": {"summary": {"n": 120, "tp1_rate": 0.6, "mean_r": 0.05}, "eligible": True},
+                    "EURUSD M15": {"summary": {"n": 80, "tp1_rate": 0.55, "mean_r": -0.02}, "eligible": False},
+                },
+            }
+        },
+    }
+    _within_discord_limits(embeds.validation_embed(validation, cfg))
+
+    open_df = pd.DataFrame(
+        {
+            "key": ["k1", "k2"],
+            "symbol": ["XAUUSD", "EURUSD"],
+            "tf": ["H1", "M15"],
+            "direction": [1, -1],
+            "entry": [4300.0, 1.075],
+            "stop": [4290.0, 1.078],
+            "tp1": [4310.0, 1.072],
+            "tp2": [4320.0, 1.069],
+            "p_tp1": [0.6, 0.0],
+            "signal_time": [now, now],
+            "tp1_notified": [True, False],
+            "source": ["bot", "manual"],
+        }
+    )
+    _within_discord_limits(embeds.open_signals_embed(open_df, cfg, {"k1": 0.75}))
+    _within_discord_limits(embeds.open_signals_embed(open_df.iloc[0:0], cfg))
+
+    for reason in ("stop", "tp2", "tp1_be", "time", "desconocido"):
+        event = {
+            "type": "closed",
+            "symbol": "XAUUSD",
+            "tf": "H1",
+            "direction": 1,
+            "reason": reason,
+            "realized_r": -0.5,
+            "hours": 6.0,
+            "advice_r": 0.3,
+        }
+        _within_discord_limits(embeds.event_embed(event, cfg))
+    tp1_event = {"type": "tp1", "symbol": "XAUUSD", "tf": "H1", "direction": 1, "hours": 2.0, "partial": 0.5}
+    _within_discord_limits(embeds.event_embed(tp1_event, cfg))
+
+
 def test_news_title_cannot_inject_formatting_or_mentions(cfg) -> None:
     evil = EconomicEvent(
         datetime(2026, 9, 23, 12, 30, tzinfo=UTC), "USD", "**PUMP** @everyone https://x.test", "High", "", ""
