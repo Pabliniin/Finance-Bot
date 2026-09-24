@@ -199,6 +199,17 @@ def test_full_live_days_are_protected_from_the_nightly_download(service: BotServ
     assert day_full.isoformat() in service.md.m1_store.fetched("XAUUSD")
 
 
+def test_correlated_exposure_detects_same_dollar_direction() -> None:
+    """Largo en oro y largo en EURUSD apuestan los dos por un dolar debil: van
+    en el mismo sentido y se avisa. Sentidos opuestos se compensan."""
+    from finance_bot.service import correlated_exposure
+
+    assert correlated_exposure("EURUSD", 1, [("XAUUSD", 1)]) == ("XAUUSD", 1)  # ambas: dolar debil
+    assert correlated_exposure("EURUSD", -1, [("XAUUSD", 1)]) is None  # se compensan
+    assert correlated_exposure("XAUUSD", 1, [("XAUUSD", 1)]) is None  # mismo instrumento, no cuenta
+    assert correlated_exposure("EURUSD", 1, []) is None  # sin nada abierto
+
+
 def test_cooldown_blocks_a_second_signal_too_soon(service: BotService) -> None:
     """Tras una señal, el instrumento descansa el cooldown: evita que M1 sature."""
     from datetime import UTC, datetime, timedelta

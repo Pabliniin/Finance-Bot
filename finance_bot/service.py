@@ -40,6 +40,25 @@ class _Missing:
 _MISSING = _Missing()
 
 
+def _usd_bet(symbol: str, direction: int) -> int:
+    """+1 si la operacion apuesta por un dolar FUERTE, -1 por uno debil. Tanto el
+    oro como el euro suben cuando el dolar se debilita (XAUUSD y EURUSD se cotizan
+    contra el dolar), asi que para ambos el sesgo sobre el dolar es el contrario a
+    la direccion de la operacion."""
+    return -direction
+
+
+def correlated_exposure(symbol: str, direction: int, exposure: list[tuple[str, int]]) -> tuple[str, int] | None:
+    """Devuelve (instrumento, direccion) de una operacion abierta en OTRO
+    instrumento que apuesta por el dolar en el MISMO sentido (riesgo
+    correlacionado: no son apuestas independientes), o None si no la hay."""
+    bet = _usd_bet(symbol, direction)
+    for sym, d in exposure:
+        if sym != symbol and _usd_bet(sym, d) == bet:
+            return (sym, d)
+    return None
+
+
 @dataclass
 class ScanResult:
     notice: str | None = None  # aviso de degradacion (no es un fallo: el bot sigue)
@@ -201,7 +220,10 @@ class BotService:
                 result.errors.append(f"interruptor: {exc}")
             kill_active, _ = self.tracker.kill_switch_status()
             # el tope es para las señales del bot: las operaciones que sigues a mano no cuentan
-            open_now = len(self.tracker.open_signals(source="bot"))
+            open_bot = self.tracker.open_signals(source="bot")
+            open_now = len(open_bot)
+            # exposicion abierta al dolar, para avisar de señales correlacionadas
+            exposure = [(str(r["symbol"]), int(r["direction"])) for _, r in open_bot.iterrows()]
             now = datetime.now(UTC)
 
             quotes: dict[str, tuple[float, float] | None] = {}
@@ -246,9 +268,17 @@ class BotService:
                             f"ya hay {open_now} señales abiertas (maximo {self.cfg.account.max_open_signals})"
                         )
                         continue
+                    conflict = correlated_exposure(signal.symbol, signal.direction, exposure)
+                    if conflict is not None:
+                        other_sym, other_dir = conflict
+                        signal.warnings.append(
+                            f"ya tienes abierta una {'compra' if other_dir > 0 else 'venta'} de {other_sym} que "
+                            "depende del dolar en el mismo sentido: riesgo correlacionado, no es una apuesta aparte"
+                        )
                     self.tracker.record(signal)
                     self.tracker.set_setting(f"last_signal_{symbol}", now.isoformat())
                     result.new_signals.append(signal)
+                    exposure.append((signal.symbol, signal.direction))
                     open_now += 1
             try:
                 result.advice = self._exit_advice(result.analyses, quotes, now)
