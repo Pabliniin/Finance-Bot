@@ -14,8 +14,10 @@ htmlcov/
 *.log
 logs/
 
-# Datos de mercado (se regeneran con `python -m finance_bot download`) y estado local
-data/
+# Datos de mercado (se regeneran con `python -m finance_bot download`) y estado local.
+# Anclado a la raiz: `data/` a secas ignoraba tambien el paquete fuente
+# `finance_bot/data/` (store, dukascopy, feeds...), que SI debe versionarse.
+/data/
 *.parquet
 *.sqlite3
 *.tmp

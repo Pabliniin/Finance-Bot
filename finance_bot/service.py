@@ -217,7 +217,9 @@ class BotService:
                 date.fromisoformat(self.cfg.data.m1_history_start),
                 datetime.now(UTC).date() - timedelta(days=LIVE_LOOKBACK_DAYS),
             )
-            n_m1 = download_m1_history(client, self.md.m1_store, symbol, divisor, m1_from)
+            # prefer_existing: la consolidacion rellena huecos pero NO pisa las velas
+            # que MT5 escribio en vivo (evita re-etiquetar señales abiertas con otro broker).
+            n_m1 = download_m1_history(client, self.md.m1_store, symbol, divisor, m1_from, prefer_existing=True)
             lines.append(f"{symbol}: +{n_h1} velas H1, +{n_m1} velas M1")
         return "; ".join(lines)
 
