@@ -64,6 +64,9 @@ STALE_REALTIME = timedelta(minutes=15)
 # Coste (spread+deslizamiento) que ya se lleva una parte notable del riesgo: no
 # bloquea, pero se avisa para que sepas que reduce lo que puedes ganar (tipico en M1).
 HIGH_COST_R = 0.35
+# Si la probabilidad del modelo y la tasa real de casos parecidos discrepan mas
+# que esto (en puntos), se avisa: el modelo podria estar extrapolando.
+PROB_DIVERGENCE = 0.15
 # Al comparar señales por expectativa, la basada en POCOS casos se encoge hacia 0:
 # una expectativa alta con pocos casos es menos fiable que una algo menor con
 # muchos. Peso del prior (en "numero de casos equivalentes").
@@ -591,6 +594,13 @@ class SignalEngine:
             s.warnings.append(
                 f"hay {'una resistencia' if s.direction > 0 else 'un soporte'} a {s.room_to_level_r:.1f}R, "
                 f"antes del TP1 ({s.targets_r[0]:.1f}R): el precio puede frenarse antes de llegar"
+            )
+        # El modelo y los casos reales parecidos discrepan mucho: puede estar
+        # extrapolando fuera de lo que respalda el historico. Tomarlo con cautela.
+        if s.similar_tp1_rate is not None and abs(s.p_tp1 - s.similar_tp1_rate) >= PROB_DIVERGENCE:
+            s.warnings.append(
+                f"el modelo estima {s.p_tp1:.0%} de TP1, pero en {s.similar_n} casos parecidos se cumplio "
+                f"{s.similar_tp1_rate:.0%}: hazle menos caso al numero del modelo aqui"
             )
         # Confluencia fuerte: se exige que muchas estrategias coincidan. Filtra los
         # setups flojos incluso en informativo; el usuario quiere pocas y solidas.

@@ -254,6 +254,19 @@ def test_level_before_tp1_is_warned(cfg) -> None:
     assert s.emit and any("antes del TP1" in w for w in s.warnings)
 
 
+def test_model_vs_similar_divergence_is_warned(cfg) -> None:
+    """Si el modelo y la tasa real de casos parecidos discrepan mucho, se avisa
+    (podria estar extrapolando); un margen pequeño no molesta."""
+    engine = SignalEngine(cfg, md=None, artifacts=None)  # type: ignore[arg-type]
+    now = datetime(2026, 9, 22, 10, 5, tzinfo=UTC)
+    diverge = _signal(p_tp1=0.70, similar_tp1_rate=0.50)  # 20 pp de diferencia
+    engine._apply_gates(diverge, "informative", now)
+    assert diverge.emit and any("casos parecidos se cumplio" in w for w in diverge.warnings)
+    close = _signal(p_tp1=0.60, similar_tp1_rate=0.58)  # 2 pp: sin aviso
+    engine._apply_gates(close, "informative", now)
+    assert not any("casos parecidos se cumplio" in w for w in close.warnings)
+
+
 def test_m1_signal_uses_m15_history_as_labeled_proxy() -> None:
     """M1 no tiene historico propio: similar_cases usa M15 y lo marca."""
     h = _history()
