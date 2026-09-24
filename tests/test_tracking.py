@@ -55,6 +55,28 @@ def test_kill_switch_trips_on_drawdown_and_needs_manual_reset(env) -> None:
     assert tracker.evaluate_kill_switch() is None  # sigue activo, no se re-evalua ni se levanta solo
     tracker.reset_kill_switch()
     assert tracker.kill_switch_status() == (False, None)
+    # REGRESION: la reactivacion tiene que SOSTENERSE. El drawdown historico solo
+    # crece, asi que sin baseline de reactivacion el siguiente escaneo lo volveria
+    # a disparar y el bot se apagaria para siempre.
+    assert tracker.evaluate_kill_switch() is None
+    assert tracker.kill_switch_status() == (False, None)
+
+
+def test_kill_switch_only_counts_losses_after_reactivation(env) -> None:
+    """Tras /reactivar, solo cuentan las señales cerradas despues: las viejas
+    (que ya dispararon el interruptor) no pueden volver a dispararlo."""
+    cfg, md, tracker = env
+    tracker.set_setting("kill_switch_reset_at", "2026-05-01T00:00:00+00:00")
+    for i in range(25):  # perdidas ANTES de reactivar: ya no cuentan
+        tracker.record(_signal(key=f"old{i}", signal_time=pd.Timestamp("2026-01-01", tz="UTC") + pd.Timedelta(days=i)))
+    for i in range(25):  # perdidas DESPUES de reactivar: si cuentan
+        tracker.record(_signal(key=f"new{i}", signal_time=pd.Timestamp("2026-06-01", tz="UTC") + pd.Timedelta(days=i)))
+    with tracker.engine.begin() as conn:
+        conn.exec_driver_sql(
+            "UPDATE signals SET status='closed', realized_r=-1.0, hit_tp1=0, hit_tp2=0, exit_time=signal_time"
+        )
+    reason = tracker.evaluate_kill_switch()
+    assert reason is not None and "25.0R" in reason  # 25 perdidas nuevas, no las 50 totales
 
 
 def test_user_settings_persist(env) -> None:

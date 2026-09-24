@@ -429,9 +429,15 @@ class Tracker:
         if active:
             return None
         ks = self.cfg.risk.kill_switch
+        # Solo lo cerrado DESPUES de la ultima reactivacion: el drawdown historico
+        # (una suma acumulada) solo puede crecer, asi que sin este corte una vez
+        # saltado por drawdown volveria a saltar en el siguiente escaneo y
+        # /reactivar no serviria de nada (se quedaria apagado para siempre).
+        since_raw = self.get_setting("kill_switch_reset_at")
+        since = datetime.fromisoformat(since_raw) if since_raw else None
         # Solo señales validadas: el interruptor compara resultados con lo que el
         # modelo prometio. Un setup marcado "sin ventaja" no promete nada.
-        closed = self.closed_signals()
+        closed = self.closed_signals(since=since)
         closed = closed[closed["validated"].astype(bool)] if len(closed) else closed
         if len(closed) < ks.min_signals:
             return None
@@ -459,6 +465,10 @@ class Tracker:
 
     def reset_kill_switch(self) -> None:
         self.set_setting("kill_switch", json.dumps({"active": False, "reason": None}))
+        # Baseline de la reactivacion: a partir de ahora el interruptor solo juzga
+        # las señales que se cierren despues (si no, el drawdown historico lo
+        # volveria a disparar de inmediato). Se le da al modelo una ventana limpia.
+        self.set_setting("kill_switch_reset_at", datetime.now(UTC).isoformat())
 
 
 def _signal_payload(s: Signal) -> dict:
