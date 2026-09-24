@@ -176,10 +176,10 @@ def test_watchdog_relaunches_a_dead_loop_and_restarts_a_stalled_process(cfg, mon
     bot.scan_loop = SimpleNamespace(is_running=lambda: True)  # type: ignore[assignment]
     bot._last_cycle_done = datetime.now(UTC) - bot_app.WATCHDOG_STALL - timedelta(minutes=1)
     monkeypatch.setattr(bot, "send", lambda *a, **k: asyncio.sleep(0))
-    monkeypatch.setattr(bot_app.updater, "schedule_restart", lambda: exited.append(-1))
+    monkeypatch.setattr(bot_app.updater, "restart_process", lambda: exited.append(-1))
     monkeypatch.setattr(bot_app.os, "_exit", lambda code: exited.append(code))
     asyncio.run(bot.watchdog_loop.coro(bot))
-    assert exited == [-1, bot_app.updater.EXIT_RESTART]  # programa el relanzamiento y sale
+    assert exited == [-1, bot_app.updater.EXIT_RESTART]  # relanza el proceso y sale
 
     exited.clear()
     bot._last_cycle_done = datetime.now(UTC)
