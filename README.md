@@ -49,8 +49,10 @@ Cada minuto (con MetaTrader 5; cada 3 con el respaldo gratuito), sobre velas
    - el interruptor de seguridad está apagado
    - no se supera el máximo de señales abiertas
 
-   En modo **informativo** (el que viene configurado) te envía todos los setups que disparan, cada uno con sus avisos: «SIN VENTAJA VALIDADA», expectativa histórica real, umbral no alcanzado… Solo sigue bloqueando lo que hace la operación inejecutable: que llegue tarde o que haya una noticia fuerte encima.
-6. **Seguimiento**: cada señal enviada se sigue hasta el cierre con las mismas reglas del backtest. Recibes un aviso cuando toca TP1 (cierra la mitad y mueve el stop a la entrada), TP2, stop o cierre por tiempo. `/stats` compara lo real con lo que predijo el modelo.
+   En modo **informativo** (el que viene configurado) te envía los setups que disparan, cada uno con sus avisos: «SIN VENTAJA VALIDADA», expectativa histórica real, umbral no alcanzado… Sigue bloqueando en ambos modos lo que hace la operación inejecutable o peligrosa: que llegue tarde, que haya una noticia fuerte encima, que **el spread esté ahora mucho más ancho de lo normal** (mercado ilíquido) o que **el coste se lleve todo tu riesgo**. Además marca avisos cuando el coste es alto (típico en M1), cuando hay un nivel antes del TP1 o cuando el modelo y los casos reales parecidos discrepan mucho.
+
+   Cuando varias temporalidades disparan a la vez, se envía **solo la mejor de cada instrumento**: la de mayor expectativa histórica (ponderada por cuántos casos la respaldan), no simplemente la más probable.
+6. **Seguimiento**: cada señal enviada se sigue hasta el cierre con las mismas reglas del backtest. Recibes un aviso cuando toca TP1 (cierra la mitad y mueve el stop a la entrada), TP2, stop o cierre por tiempo. `/stats` compara lo real con lo que predijo el modelo y, con muestra suficiente, te dice si los aciertos van **en línea, por encima o por debajo** de lo previsto.
 7. **Avisos de cierre**: mientras la operación vive, el bot te avisa si ve motivo para salir antes:
    - el contexto de esa temporalidad se gira en contra (6 o más votos netos)
    - dispara una entrada en sentido contrario
