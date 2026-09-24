@@ -19,7 +19,7 @@ from finance_bot.data.live import DukascopyFeed, LiveFeed, LiveFeedError, create
 from finance_bot.data.market import MarketData
 from finance_bot.engine import exits
 from finance_bot.engine.exits import ExitAdvice
-from finance_bot.engine.signals import Analysis, Artifacts, Signal, SignalEngine
+from finance_bot.engine.signals import STALE_REALTIME, Analysis, Artifacts, Signal, SignalEngine
 from finance_bot.tracking import Tracker
 
 logger = logging.getLogger(__name__)
@@ -46,6 +46,29 @@ def _usd_bet(symbol: str, direction: int) -> int:
     contra el dolar), asi que para ambos el sesgo sobre el dolar es el contrario a
     la direccion de la operacion."""
     return -direction
+
+
+def forex_market_open(now: datetime) -> bool:
+    """Aproximacion honesta del horario del mercado (oro y divisas): abierto de
+    domingo ~21:00 UTC a viernes ~21:00 UTC. Sirve para no intentar reconvertir
+    MT5 en fin de semana, cuando los datos estan viejos por estar cerrado, no
+    por un fallo. No hace falta que sea exacto: errar hacia "abierto" en los
+    bordes solo provoca algun reintento de mas, inofensivo."""
+    wd, hour = now.weekday(), now.hour  # lunes=0 ... domingo=6
+    closed = wd == 5 or (wd == 4 and hour >= 21) or (wd == 6 and hour < 21)  # sab / vie noche / dom manana
+    return not closed
+
+
+def should_reconnect(feed_realtime: bool, newest_data: pd.Timestamp | None, now: datetime, market_open: bool) -> bool:
+    """¿Conviene recrear la fuente de datos? Si no es tiempo real, para intentar
+    subir a MT5. Si es tiempo real pero sus datos llevan mas de STALE_REALTIME
+    congelados con el mercado abierto (terminal abierto pero sin feed del broker,
+    sin error de IPC), para reconectar en vez de quedarse mudo."""
+    if not feed_realtime:
+        return True
+    if newest_data is None or not market_open:
+        return False
+    return now - newest_data.to_pydatetime() > STALE_REALTIME
 
 
 def correlated_exposure(symbol: str, direction: int, exposure: list[tuple[str, int]]) -> tuple[str, int] | None:
@@ -98,12 +121,21 @@ class BotService:
             self.feed = create_feed(self.cfg, self.secrets)
             self._feed_checked = now
             logger.info("Fuente de datos en vivo: %s", self.feed.name)
-        elif not self.feed.realtime and now - self._feed_checked >= FEED_RETRY:
-            self._feed_checked = now
-            candidate = create_feed(self.cfg, self.secrets)
-            if candidate.realtime:
+            return self.feed
+        if now - self._feed_checked < FEED_RETRY:
+            return self.feed
+        newest = max(self.complete_until.values()) if self.complete_until else None
+        if not should_reconnect(self.feed.realtime, newest, now, forex_market_open(now)):
+            return self.feed
+        self._feed_checked = now
+        was_realtime = self.feed.realtime  # ya era tiempo real -> el motivo es datos congelados
+        candidate = create_feed(self.cfg, self.secrets)
+        if candidate.realtime:
+            if was_realtime:
+                logger.warning("MT5 estaba en tiempo real pero con datos congelados; reconectado")
+            else:
                 logger.info("Fuente en vivo mejorada a %s (antes %s)", candidate.name, self.feed.name)
-                self.feed = candidate
+            self.feed = candidate
         return self.feed
 
     def refresh_data(self) -> None:

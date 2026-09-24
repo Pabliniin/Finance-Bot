@@ -199,6 +199,75 @@ def test_full_live_days_are_protected_from_the_nightly_download(service: BotServ
     assert day_full.isoformat() in service.md.m1_store.fetched("XAUUSD")
 
 
+def test_forex_market_open_matches_the_weekend_break() -> None:
+    from datetime import UTC, datetime
+
+    from finance_bot.service import forex_market_open
+
+    assert forex_market_open(datetime(2026, 9, 23, 12, tzinfo=UTC))  # miercoles: abierto
+    assert not forex_market_open(datetime(2026, 9, 26, 12, tzinfo=UTC))  # sabado: cerrado
+    assert not forex_market_open(datetime(2026, 9, 25, 22, tzinfo=UTC))  # viernes noche: cerrado
+    assert not forex_market_open(datetime(2026, 9, 27, 10, tzinfo=UTC))  # domingo manana: cerrado
+    assert forex_market_open(datetime(2026, 9, 27, 22, tzinfo=UTC))  # domingo noche: reabre
+
+
+def test_should_reconnect_rules() -> None:
+    from datetime import UTC, datetime
+
+    from finance_bot.service import should_reconnect
+
+    now = datetime(2026, 9, 23, 12, tzinfo=UTC)
+    fresh = pd.Timestamp(now) - pd.Timedelta(minutes=2)
+    frozen = pd.Timestamp(now) - pd.Timedelta(minutes=40)
+    assert should_reconnect(False, fresh, now, True)  # fuente con retraso: intentar subir a MT5
+    assert should_reconnect(True, frozen, now, True)  # tiempo real pero congelado y mercado abierto
+    assert not should_reconnect(True, fresh, now, True)  # tiempo real y fresco: no tocar
+    assert not should_reconnect(True, frozen, now, False)  # congelado pero mercado cerrado: normal
+    assert not should_reconnect(True, None, now, True)  # aun sin datos: no hay motivo
+
+
+def test_stale_realtime_feed_is_reconnected(service: BotService, monkeypatch) -> None:
+    """MT5 dice ser tiempo real pero sus datos llevan rato congelados: se reconecta
+    (antes el bot se quedaba mudo sin intentarlo)."""
+    from datetime import UTC, datetime
+
+    from finance_bot import service as service_module
+
+    class Frozen:
+        name, realtime = "MT5", True
+
+    class Fresh:
+        name, realtime = "MT5", True
+
+    service.feed = Frozen()  # type: ignore[assignment]
+    service.complete_until = {"XAUUSD": pd.Timestamp.now(tz="UTC") - pd.Timedelta(minutes=40)}
+    service._feed_checked = datetime.now(UTC) - service_module.FEED_RETRY
+    monkeypatch.setattr(service_module, "forex_market_open", lambda now: True)
+    monkeypatch.setattr(service_module, "create_feed", lambda cfg, secrets: Fresh())
+    assert isinstance(service._ensure_feed(), Fresh)
+
+
+def test_stale_realtime_not_reconnected_when_market_closed(service: BotService, monkeypatch) -> None:
+    """Con el mercado cerrado (fin de semana) los datos viejos son normales: no
+    se reconecta en bucle."""
+    from datetime import UTC, datetime
+
+    from finance_bot import service as service_module
+
+    class Frozen:
+        name, realtime = "MT5", True
+
+    frozen = Frozen()
+    service.feed = frozen  # type: ignore[assignment]
+    service.complete_until = {"XAUUSD": pd.Timestamp.now(tz="UTC") - pd.Timedelta(minutes=40)}
+    service._feed_checked = datetime.now(UTC) - service_module.FEED_RETRY
+    monkeypatch.setattr(service_module, "forex_market_open", lambda now: False)
+    monkeypatch.setattr(
+        service_module, "create_feed", lambda cfg, secrets: pytest.fail("no debe reconectar con el mercado cerrado")
+    )
+    assert service._ensure_feed() is frozen
+
+
 def test_correlated_exposure_detects_same_dollar_direction() -> None:
     """Largo en oro y largo en EURUSD apuestan los dos por un dolar debil: van
     en el mismo sentido y se avisa. Sentidos opuestos se compensan."""
