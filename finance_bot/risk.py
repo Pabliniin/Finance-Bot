@@ -45,16 +45,19 @@ def position_size(
 
     if lots < inst.min_lot:
         min_risk = inst.min_lot * risk_eur_per_lot
+        min_pct = 100 * min_risk / capital_eur
+        needed_capital = min_risk * 100 / risk_pct  # capital al que el lote minimo cabe en tu %
         return PositionSize(
             lots=0.0,
             risk_eur=min_risk,
-            risk_pct=100 * min_risk / capital_eur,
+            risk_pct=min_pct,
             allowed_risk_eur=allowed_eur,
             fits=False,
             note=(
                 f"El lote minimo ({inst.min_lot}) arriesga {min_risk:.2f} EUR "
-                f"({100 * min_risk / capital_eur:.1f}% del capital), por encima de tu limite de "
-                f"{allowed_eur:.2f} EUR ({risk_pct:.1f}%). No recomendable con este capital."
+                f"({min_pct:.1f}% del capital), por encima de tu limite de "
+                f"{allowed_eur:.2f} EUR ({risk_pct:.1f}%). Para que quepa necesitarias ~{needed_capital:.0f} EUR "
+                f"de capital (o subir tu riesgo por encima del {min_pct:.1f}%). No recomendable con este capital."
             ),
         )
     real = lots * risk_eur_per_lot

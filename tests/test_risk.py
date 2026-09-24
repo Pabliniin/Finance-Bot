@@ -21,6 +21,9 @@ def test_gold_min_lot_exceeds_small_account_risk(cfg) -> None:
     assert not size.fits and size.lots == 0.0
     assert size.risk_eur == pytest.approx(25.0 / 1.10)
     assert "No recomendable" in size.note
+    # da la salida concreta: el capital al que el lote minimo cabria en el 5%
+    needed = (25.0 / 1.10) * 100 / 5.0
+    assert f"~{needed:.0f} EUR" in size.note
 
 
 def test_never_rounds_up_beyond_allowed_risk(cfg) -> None:
