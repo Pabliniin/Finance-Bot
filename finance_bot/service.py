@@ -228,9 +228,11 @@ class BotService:
                 if cooldown and last is not None and now - last < timedelta(minutes=cooldown):
                     continue
                 # De todas las temporalidades que disparan a la vez, se emite solo la
-                # MEJOR de cada instrumento (mas probable): nada de M1+H1+H4 de golpe.
+                # MEJOR de cada instrumento: la de mayor expectativa historica (R medio
+                # de casos similares, ya con costes) y, a igualdad, la mas probable.
+                # Nada de M1+H1+H4 de golpe.
                 candidates = [s for s in analysis.signals if s.emit and not self.tracker.is_known(s.key)]
-                candidates.sort(key=lambda s: s.p_tp1, reverse=True)
+                candidates.sort(key=lambda s: s.rank_score, reverse=True)
                 if self.cfg.signals.one_signal_per_symbol:
                     candidates = candidates[:1]
                 for signal in candidates:

@@ -78,6 +78,15 @@ class SignalsConfig(BaseModel):
     # Tras una señal, no se emite otra del mismo instrumento en estos minutos (evita
     # que M1 sature). 0 lo desactiva.
     cooldown_minutes: int = Field(default=15, ge=0)
+    # Coste maximo (spread + deslizamiento) admisible como fraccion de 1R. Por
+    # encima, el coste supera tu riesgo y la operacion no tiene sentido: no se
+    # emite. Rara vez salta; en M1 con stops ajustados el coste ya es alto de por
+    # si y solo se avisa. 0 lo desactiva.
+    max_cost_r: float = Field(default=1.0, ge=0)
+    # Si el spread AHORA supera este multiplo del habitual del instrumento, el
+    # mercado esta iliquido o hay una noticia encima y la entrada saldria mucho
+    # peor de lo previsto: no se emite. 0 lo desactiva.
+    max_spread_multiple: float = Field(default=3.0, ge=0)
 
 
 class SessionsConfig(BaseModel):

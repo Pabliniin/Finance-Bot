@@ -61,6 +61,9 @@ M1_ANALYSIS_BARS = 3000
 SIMILAR_PROXY = {"M1": "M15"}
 # Con MT5 y mercado abierto, mas de esto sin velas nuevas es un terminal sin conexion.
 STALE_REALTIME = timedelta(minutes=15)
+# Coste (spread+deslizamiento) que ya se lleva una parte notable del riesgo: no
+# bloquea, pero se avisa para que sepas que reduce lo que puedes ganar (tipico en M1).
+HIGH_COST_R = 0.35
 
 
 @dataclass
@@ -149,6 +152,12 @@ class Signal:
     entry_low: float | None = None
     entry_high: float | None = None
     extra_target_r: float | None = None
+    # Spread actual dividido entre el habitual del instrumento (None sin cotizacion
+    # en vivo): >1 = spread mas ancho de lo normal ahora mismo.
+    spread_ratio: float | None = None
+    # Distancia en R hasta el primer nivel en contra (resistencia en compras,
+    # soporte en ventas). None si no hay nivel identificado.
+    room_to_level_r: float | None = None
     blockers: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
@@ -172,6 +181,14 @@ class Signal:
     @property
     def side(self) -> str:
         return "COMPRA" if self.direction > 0 else "VENTA"
+
+    @property
+    def rank_score(self) -> tuple[float, float]:
+        """Orden de preferencia cuando varias señales emiten a la vez y solo se
+        envia una por instrumento: primero la de mayor EXPECTATIVA historica (R
+        medio de casos similares, ya neto de costes) y, a igualdad, la de mayor
+        probabilidad de TP1. Enviar la mejor, no solo la mas probable."""
+        return (self.similar_ev if self.similar_ev is not None else float("-inf"), self.p_tp1)
 
 
 @dataclass
@@ -427,7 +444,20 @@ class SignalEngine:
         # Zona de entrada hacia el lado bueno: comprar algo mas abajo (o vender
         # algo mas arriba) mejora el precio, pero la operacion puede no llegar.
         zone_depth = self.cfg.signals.entry_zone_r * r_price
-        cost_price = inst.spread.price_units(entry) + 2 * inst.slippage.price_units(entry)
+        configured_spread = inst.spread.price_units(entry)
+        cost_price = configured_spread + 2 * inst.slippage.price_units(entry)
+        # Spread AHORA vs el habitual: delata mercado iliquido o una noticia encima.
+        spread_ratio = (
+            max(quote[1] - quote[0], 0.0) / configured_spread
+            if quote is not None and configured_spread > 0
+            else None
+        )
+        # Espacio hasta el primer nivel en contra (resistencia en compras, soporte
+        # en ventas), en R: si cae antes del TP1 el precio puede frenarse ahi.
+        level = view.resistance if direction > 0 else view.support
+        room_to_level_r = (
+            direction * (level - entry) / r_price if level is not None and r_price > 0 else None
+        )
 
         history = self.artifacts.histories[plan_name]
         cases, scope = similar_cases(history, symbol, tf, direction, p1, self.cfg.signals.min_similar_cases)
@@ -487,6 +517,8 @@ class SignalEngine:
             entry_low=entry - zone_depth if direction > 0 else entry,
             entry_high=entry if direction > 0 else entry + zone_depth,
             extra_target_r=self.cfg.signals.extra_target_r,
+            spread_ratio=spread_ratio,
+            room_to_level_r=room_to_level_r,
         )
         self._apply_gates(signal, mode, now)
         return signal
@@ -522,6 +554,33 @@ class SignalEngine:
                 s.blockers.append(
                     f"noticia de alto impacto en menos de {blackout:g}h ({soon[0].currency} {soon[0].title})"
                 )
+        # Coste real de operar. Si el spread+deslizamiento supera tu riesgo, la
+        # operacion no tiene sentido (bloquea); si es alto pero asumible, se avisa
+        # (tipico en M1 y con stops muy ajustados: reduce lo que puedes ganar).
+        if np.isfinite(s.cost_r):
+            if cfg.max_cost_r and s.cost_r > cfg.max_cost_r:
+                s.blockers.append(
+                    f"el coste (spread+deslizamiento) es {s.cost_r:.0%} de tu riesgo, por encima del maximo "
+                    f"{cfg.max_cost_r:.0%}: el stop es demasiado ajustado para lo que cuesta operar"
+                )
+            elif s.cost_r >= HIGH_COST_R:
+                s.warnings.append(
+                    f"coste alto: el spread+deslizamiento se lleva ~{s.cost_r:.0%} de tu riesgo en esta señal "
+                    "(normal en M1 y con stops ajustados; reduce lo que puedes ganar)"
+                )
+        # Spread AHORA mucho mas ancho de lo normal: mercado iliquido o noticia
+        # encima. La entrada y el stop saldrian peor de lo previsto (bloquea).
+        if cfg.max_spread_multiple and s.spread_ratio is not None and s.spread_ratio > cfg.max_spread_multiple:
+            s.blockers.append(
+                f"el spread ahora es {s.spread_ratio:.1f}x el habitual: mercado iliquido o noticia encima; "
+                "la entrada y el stop saldrian peor de lo previsto"
+            )
+        # Un nivel en contra antes del TP1: no bloquea, pero el precio puede frenarse ahi.
+        if s.room_to_level_r is not None and 0 <= s.room_to_level_r < s.targets_r[0]:
+            s.warnings.append(
+                f"hay {'una resistencia' if s.direction > 0 else 'un soporte'} a {s.room_to_level_r:.1f}R, "
+                f"antes del TP1 ({s.targets_r[0]:.1f}R): el precio puede frenarse antes de llegar"
+            )
         # Confluencia fuerte: se exige que muchas estrategias coincidan. Filtra los
         # setups flojos incluso en informativo; el usuario quiere pocas y solidas.
         confluence = len(s.votes_for) - len(s.votes_against)

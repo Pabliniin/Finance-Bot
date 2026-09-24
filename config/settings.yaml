@@ -71,6 +71,10 @@ signals:
   one_signal_per_symbol: true    # solo la mejor señal de cada instrumento por escaneo
   cooldown_minutes: 15           # tras una señal, no se emite otra del mismo instrumento en este rato
                                  # (evita que M1 sature; subelo para menos señales)
+  max_cost_r: 1.0                # no emitir si el coste (spread+deslizamiento) supera este multiplo de tu
+                                 # riesgo (1.0 = todo tu riesgo). Rara vez salta; el coste alto solo se avisa
+  max_spread_multiple: 3.0       # no emitir si el spread AHORA supera este multiplo del habitual
+                                 # (mercado iliquido o noticia encima). 0 lo desactiva
   news_blackout_hours: {M15: 2, H1: 3, H4: 0, D1: 0}   # sin señales intradia cerca de noticias de alto impacto
   news_currencies: [USD, EUR]
 

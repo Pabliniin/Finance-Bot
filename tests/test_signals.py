@@ -198,6 +198,54 @@ def test_informative_mode_shows_setups_below_threshold_with_a_warning(cfg) -> No
     assert not strict_low.emit  # en estricto el umbral sigue bloqueando
 
 
+def test_rank_prefers_expected_value_then_probability() -> None:
+    """Entre señales que emiten a la vez se envia la de mayor expectativa; a
+    igualdad de expectativa, la de mayor probabilidad de TP1."""
+    high_ev = _signal(similar_ev=0.20, p_tp1=0.55)
+    high_prob = _signal(similar_ev=0.05, p_tp1=0.80)
+    assert high_ev.rank_score > high_prob.rank_score  # gana la de mayor expectativa
+    lower_prob = _signal(similar_ev=0.10, p_tp1=0.60)
+    higher_prob = _signal(similar_ev=0.10, p_tp1=0.66)
+    assert higher_prob.rank_score > lower_prob.rank_score  # desempate por probabilidad
+
+
+def test_extreme_cost_blocks_in_both_modes(cfg) -> None:
+    """Si el coste (spread+deslizamiento) supera tu riesgo, la operacion no tiene
+    sentido: no se emite en ningun modo."""
+    engine = SignalEngine(cfg, md=None, artifacts=None)  # type: ignore[arg-type]
+    now = datetime(2026, 9, 22, 10, 5, tzinfo=UTC)
+    for mode in ("strict", "informative"):
+        s = _signal(cost_r=1.5)
+        engine._apply_gates(s, mode, now)
+        assert not s.emit and any("coste" in b for b in s.blockers)
+
+
+def test_high_cost_is_a_warning_not_a_block(cfg) -> None:
+    """Un coste alto pero asumible (tipico en M1) avisa, no bloquea: el usuario decide."""
+    engine = SignalEngine(cfg, md=None, artifacts=None)  # type: ignore[arg-type]
+    s = _signal(cost_r=0.5)  # >= HIGH_COST_R (0.35) pero <= max_cost_r (1.0)
+    engine._apply_gates(s, "informative", datetime(2026, 9, 22, 10, 5, tzinfo=UTC))
+    assert s.emit and any("coste alto" in w for w in s.warnings)
+
+
+def test_blown_out_spread_blocks_in_both_modes(cfg) -> None:
+    """Spread actual muy por encima del habitual (noticia/iliquidez): no se emite."""
+    engine = SignalEngine(cfg, md=None, artifacts=None)  # type: ignore[arg-type]
+    now = datetime(2026, 9, 22, 10, 5, tzinfo=UTC)
+    for mode in ("strict", "informative"):
+        s = _signal(spread_ratio=5.0)
+        engine._apply_gates(s, mode, now)
+        assert not s.emit and any("spread ahora" in b for b in s.blockers)
+
+
+def test_level_before_tp1_is_warned(cfg) -> None:
+    """Un nivel en contra antes del TP1 no bloquea, pero se avisa."""
+    engine = SignalEngine(cfg, md=None, artifacts=None)  # type: ignore[arg-type]
+    s = _signal(room_to_level_r=0.5)  # nivel a 0.5R, con TP1 a 1.0R
+    engine._apply_gates(s, "informative", datetime(2026, 9, 22, 10, 5, tzinfo=UTC))
+    assert s.emit and any("antes del TP1" in w for w in s.warnings)
+
+
 def test_m1_signal_uses_m15_history_as_labeled_proxy() -> None:
     """M1 no tiene historico propio: similar_cases usa M15 y lo marca."""
     h = _history()
