@@ -47,6 +47,11 @@ logger = logging.getLogger(__name__)
 
 MODELS_DIR = PROJECT_ROOT / "models"
 REPORTS_DIR = PROJECT_ROOT / "reports"
+# M1 NO se entrena ni valida: no tiene historico propio fiable para etiquetar (sus
+# operaciones caben dentro de una sola vela base y resolverlas con velas horarias
+# las falsea), y en vivo usa M15 como proxy. Meter M1 aqui contaminaria el modelo
+# con cientos de miles de filas mal etiquetadas.
+RESEARCH_EXCLUDED_TF = frozenset({"M1"})
 THRESHOLD_GRID = [round(x, 3) for x in np.arange(0.30, 0.801, 0.025)]
 MIN_TRADES_THRESHOLD = 100
 MIN_TRADES_GROUP = 30
@@ -105,9 +110,16 @@ def _intraday_hours(cfg: AppConfig, tf: str) -> list[int] | None:
     return cfg.sessions_utc.allowed_hours if tf in cfg.sessions_utc.intraday_timeframes else None
 
 
+def research_timeframes(cfg: AppConfig) -> list[str]:
+    """Temporalidades que se entrenan y validan: todas las de la config menos las
+    excluidas (M1). M15 se sigue construyendo desde la base M1 aunque M1 no este
+    en la lista, asi que excluirlo no le afecta."""
+    return [tf for tf in cfg.timeframes if tf not in RESEARCH_EXCLUDED_TF]
+
+
 def build_candidates(cfg: AppConfig, md: MarketData) -> tuple[list[GroupData], dict]:
     symbols = list(cfg.instruments)
-    timeframes = list(cfg.timeframes)
+    timeframes = research_timeframes(cfg)
     bars = {s: md.all_timeframes(s, timeframes) for s in symbols}
     coverage = {
         s: {tf: (len(b), str(b.index.min()), str(b.index.max())) for tf, b in bars[s].items() if not b.empty}
