@@ -107,6 +107,24 @@ def test_stats_warn_about_small_samples(cfg) -> None:
     assert "ruido" in text
 
 
+def test_stats_reports_model_reliability_with_enough_signals(cfg) -> None:
+    """Con muestra suficiente, /stats dice si los aciertos van en linea con lo
+    prometido o por debajo: la respuesta honesta a '¿son efectivas?'."""
+    n = 24
+    closed = pd.DataFrame(
+        {
+            "realized_r": [0.5, -1.0] * (n // 2),
+            "hit_tp1": [1.0, 0.0] * (n // 2),  # 50% de aciertos reales
+            "hit_tp2": 0.0,
+            "p_tp1": [0.9] * n,  # el modelo prometia 90%: muy por debajo
+            "symbol": "XAUUSD",
+            "tf": "H1",
+        }
+    )
+    text = embeds.to_text(embeds.stats_embed(closed, pd.DataFrame(), "todo", cfg))
+    assert "Fiabilidad" in text and "DEBAJO" in text
+
+
 def test_panel_shows_open_signals_and_kill_switch(cfg) -> None:
     health = {
         "kill_switch": (True, "drawdown real de 13R"),

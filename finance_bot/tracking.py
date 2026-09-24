@@ -16,7 +16,6 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from scipy import stats
 from sqlalchemy import Boolean, Column, DateTime, Float, Integer, MetaData, String, Table, Text, create_engine, select
 from sqlalchemy.engine import Engine
 
@@ -26,6 +25,7 @@ from finance_bot.data.market import MarketData
 from finance_bot.engine.exits import ExitAdvice
 from finance_bot.engine.labeling import label_candidates
 from finance_bot.engine.signals import Signal
+from finance_bot.research.evaluation import reliability
 
 logger = logging.getLogger(__name__)
 
@@ -444,15 +444,13 @@ class Tracker:
         else:
             expected_hits = closed["p_tp1"].to_numpy(dtype=float)
             observed = float(closed["hit_tp1"].sum())
-            # Poisson-binomial aproximada por normal: ¿aciertos reales muy por debajo de lo predicho?
-            mean, var = expected_hits.sum(), (expected_hits * (1 - expected_hits)).sum()
-            if var > 0:
-                z = (observed - mean) / np.sqrt(var)
-                if stats.norm.cdf(z) < ks.calibration_alpha:
-                    reason = (
-                        f"aciertos de TP1 reales ({observed:.0f}) muy por debajo de lo predicho ({mean:.1f}); "
-                        f"p = {stats.norm.cdf(z):.4f}"
-                    )
+            # ¿aciertos reales muy por debajo de lo predicho? (misma prueba que el informe)
+            z, p_low = reliability(observed, expected_hits)
+            if np.isfinite(p_low) and p_low < ks.calibration_alpha:
+                reason = (
+                    f"aciertos de TP1 reales ({observed:.0f}) muy por debajo de lo predicho "
+                    f"({expected_hits.sum():.1f}); p = {p_low:.4f}"
+                )
         if reason:
             self.set_setting(
                 "kill_switch", json.dumps({"active": True, "reason": reason, "since": datetime.now(UTC).isoformat()})

@@ -8,6 +8,7 @@ from finance_bot.research.evaluation import (
     benjamini_hochberg,
     non_overlapping,
     random_baseline_pvalue,
+    reliability,
     summarize,
     wilson_interval,
 )
@@ -69,3 +70,16 @@ def test_random_baseline_pvalue_detects_better_than_random() -> None:
     pool = rng.normal(-0.05, 1.0, size=5000)
     p, mean_random = random_baseline_pvalue(0.5, 100, pool, iterations=300)
     assert p < 0.01 and mean_random == pytest.approx(-0.05, abs=0.03)
+
+
+def test_reliability_flags_underperformance() -> None:
+    probs = np.full(100, 0.6)
+    # justo lo predicho: z ~ 0, ni por encima ni por debajo
+    z0, p0 = reliability(60, probs)
+    assert abs(z0) < 0.5 and 0.3 < p0 < 0.7
+    # muchos menos aciertos de lo prometido: z muy negativo, p diminuta
+    z_low, p_low = reliability(35, probs)
+    assert z_low < -3 and p_low < 0.01
+    # sin varianza (probabilidades 0/1) no se puede juzgar
+    z_nan, p_nan = reliability(1, np.array([1.0, 0.0]))
+    assert np.isnan(z_nan) and np.isnan(p_nan)

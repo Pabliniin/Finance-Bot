@@ -141,6 +141,21 @@ def calibration_table(
     return table.reset_index().assign(bin=lambda t: t["bin"].astype(str))
 
 
+def reliability(observed_hits: float, expected_probs: np.ndarray) -> tuple[float, float]:
+    """¿Los aciertos reales de TP1 concuerdan con lo que el modelo predijo?
+    Cada señal aporta su propia probabilidad (Poisson-binomial), aproximada por
+    una normal. Devuelve (z, p): z < 0 = MENOS aciertos de lo prometido, y p es
+    la probabilidad de ver tan pocos aciertos (o menos) por azar si el modelo
+    estuviera bien calibrado. Es la misma prueba que usa el interruptor de
+    seguridad, expuesta tambien para el informe de resultados."""
+    p = np.asarray(expected_probs, dtype="float64")
+    mean, var = p.sum(), (p * (1 - p)).sum()
+    if var <= 0:
+        return float("nan"), float("nan")
+    z = (observed_hits - mean) / np.sqrt(var)
+    return float(z), float(stats.norm.cdf(z))
+
+
 def brier(p: np.ndarray, y: np.ndarray) -> float:
     return float(np.mean((p - y) ** 2))
 

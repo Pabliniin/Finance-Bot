@@ -25,6 +25,7 @@ import pandas as pd
 from finance_bot.config import AppConfig
 from finance_bot.engine.exits import ExitAdvice
 from finance_bot.engine.signals import Analysis, Signal, TimeframeView
+from finance_bot.research.evaluation import reliability
 from finance_bot.strategies.voters import FAMILY_SHORT
 
 GREEN = 0x2ECC71
@@ -421,6 +422,17 @@ def stats_embed(closed: pd.DataFrame, scoreboard: pd.DataFrame, period_label: st
         f"TP1 {pct(closed['hit_tp1'].mean())} (modelo: {pct(closed['p_tp1'].astype(float).mean())})\n"
         f"TP2 {pct(closed['hit_tp2'].mean())} · ganadoras {pct((r > 0).mean())} · peor racha {drawdown:.1f}R",
     )
+    # Fiabilidad: ¿los aciertos reales concuerdan con lo que el modelo prometio?
+    # Solo con muestra suficiente; con pocas, el aviso de "ruido" ya lo cubre.
+    z, p_low = reliability(float(closed["hit_tp1"].sum()), closed["p_tp1"].astype(float).to_numpy())
+    if len(closed) >= 20 and np.isfinite(z):
+        if p_low < 0.05:
+            verdict = "por DEBAJO de lo previsto ⚠️"
+        elif p_low > 0.95:
+            verdict = "por encima de lo previsto"
+        else:
+            verdict = "en linea con lo previsto ✅"
+        _add(embed, "🎯 Fiabilidad del modelo", f"Los aciertos van **{verdict}** ({len(closed)} señales, z {z:+.1f}).")
     by_group = closed.groupby(["symbol", "tf"])["realized_r"].agg(["count", "mean"])
     _add(
         embed,
