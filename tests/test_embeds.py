@@ -38,6 +38,17 @@ def test_unvalidated_signal_is_clearly_marked(cfg) -> None:
     assert "SIN VENTAJA VALIDADA" in (embed.description or "")
 
 
+def test_signal_shows_live_spread_condition(cfg) -> None:
+    """Con cotizacion en vivo (MT5), la señal muestra si el spread esta normal o
+    ancho ahora mismo; sin cotizacion, no aparece el campo."""
+    wide = embeds.signal_embed(_signal(live_quote=True, spread_ratio=2.5), cfg)
+    assert any("Spread" in f.name and "ANCHO" in f.value for f in wide.fields)
+    normal = embeds.signal_embed(_signal(live_quote=True, spread_ratio=1.0), cfg)
+    assert any("Spread" in f.name and "normal" in f.value for f in normal.fields)
+    estimated = embeds.signal_embed(_signal(live_quote=False, spread_ratio=None), cfg)
+    assert not any("Spread" in f.name for f in estimated.fields)
+
+
 def test_signal_respects_discord_limits(cfg) -> None:
     long_note = "x" * 3000
     signal = _signal(

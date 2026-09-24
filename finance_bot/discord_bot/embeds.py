@@ -171,6 +171,8 @@ def signal_embed(s: Signal, cfg: AppConfig) -> discord.Embed:
             else f"⚠️ {esc(s.size.note)}"
         )
         _add(embed, "💶 Tamaño", size, True)
+    if s.live_quote and s.spread_ratio is not None:
+        _add(embed, "💧 Spread ahora", _spread_note(s.spread_ratio), True)
     fam = _family_line(s.votes_for + s.votes_against, s.direction)
     _add(
         embed,
@@ -188,6 +190,16 @@ def signal_embed(s: Signal, cfg: AppConfig) -> discord.Embed:
     if warnings:
         _add(embed, "⚠️ Ojo", "\n".join(f"• {esc(w)}" for w in warnings[:5]))
     return _disclaimer(embed, cfg)
+
+
+def _spread_note(ratio: float) -> str:
+    """El spread actual comparado con el habitual del instrumento, en lenguaje
+    llano: lo que importa es si operar ahora sale caro, no el numero exacto."""
+    if ratio <= 1.3:
+        return "normal ✅"
+    if ratio <= 2.0:
+        return f"algo ancho ({ratio:.1f}× lo normal)"
+    return f"ANCHO ({ratio:.1f}× lo normal) ⚠️"
 
 
 def emit_status(s: Signal) -> str:
