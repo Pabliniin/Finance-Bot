@@ -34,7 +34,7 @@ from finance_bot import updater
 from finance_bot.discord_bot import embeds
 from finance_bot.engine.exits import r_now
 from finance_bot.logging_setup import setup_logging
-from finance_bot.service import BotService
+from finance_bot.service import BotService, forex_market_open
 
 logger = logging.getLogger(__name__)
 
@@ -351,6 +351,13 @@ class FinanceBot(discord.Client):
 
     def _presence_texts(self, open_signals: Any, r_by_key: dict[str, float]) -> list[str]:
         """Frases cortas que van rotando bajo el nombre del bot."""
+        # Con el mercado cerrado no hay precios en vivo: mostrar cifras viejas como
+        # si fueran de ahora induciria a error. Se dice claramente que esta cerrado.
+        if not forex_market_open(datetime.now(UTC)):
+            closed = ["🌙 mercado cerrado"]
+            if open_signals is not None and not open_signals.empty:
+                closed.append(f"{len(open_signals)} abierta(s) en seguimiento")
+            return closed
         texts: list[str] = []
         for symbol, analysis in self.service.latest_analyses.items():
             digits = self.service.cfg.instrument(symbol).digits
