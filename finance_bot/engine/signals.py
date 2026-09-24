@@ -64,6 +64,10 @@ STALE_REALTIME = timedelta(minutes=15)
 # Coste (spread+deslizamiento) que ya se lleva una parte notable del riesgo: no
 # bloquea, pero se avisa para que sepas que reduce lo que puedes ganar (tipico en M1).
 HIGH_COST_R = 0.35
+# Al comparar señales por expectativa, la basada en POCOS casos se encoge hacia 0:
+# una expectativa alta con pocos casos es menos fiable que una algo menor con
+# muchos. Peso del prior (en "numero de casos equivalentes").
+EV_SHRINKAGE_N = 50
 
 
 @dataclass
@@ -187,8 +191,15 @@ class Signal:
         """Orden de preferencia cuando varias señales emiten a la vez y solo se
         envia una por instrumento: primero la de mayor EXPECTATIVA historica (R
         medio de casos similares, ya neto de costes) y, a igualdad, la de mayor
-        probabilidad de TP1. Enviar la mejor, no solo la mas probable."""
-        return (self.similar_ev if self.similar_ev is not None else float("-inf"), self.p_tp1)
+        probabilidad de TP1. Enviar la mejor, no solo la mas probable.
+
+        La expectativa se encoge hacia 0 segun el numero de casos: asi una M1 con
+        expectativa alta pero pocos casos (proxy M15) no gana automaticamente a
+        una H1 solida con muchos casos."""
+        if self.similar_ev is None:
+            return (float("-inf"), self.p_tp1)
+        shrunk = self.similar_ev * self.similar_n / (self.similar_n + EV_SHRINKAGE_N)
+        return (shrunk, self.p_tp1)
 
 
 @dataclass

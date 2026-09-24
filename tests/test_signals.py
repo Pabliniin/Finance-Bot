@@ -209,6 +209,14 @@ def test_rank_prefers_expected_value_then_probability() -> None:
     assert higher_prob.rank_score > lower_prob.rank_score  # desempate por probabilidad
 
 
+def test_rank_shrinks_expected_value_of_small_samples() -> None:
+    """Una expectativa alta con pocos casos pesa menos que una algo menor con
+    muchos: la M1 con muestra escasa no gana automaticamente a una H1 solida."""
+    solid = _signal(similar_ev=0.15, similar_n=500)
+    thin = _signal(similar_ev=0.30, similar_n=20)
+    assert solid.rank_score > thin.rank_score
+
+
 def test_extreme_cost_blocks_in_both_modes(cfg) -> None:
     """Si el coste (spread+deslizamiento) supera tu riesgo, la operacion no tiene
     sentido: no se emite en ningun modo."""
