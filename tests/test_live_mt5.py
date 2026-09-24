@@ -73,6 +73,67 @@ def test_non_ipc_none_is_not_retried(feed) -> None:
     assert fake.initialized == 1  # sin reconexion: no era un fallo de conexion
 
 
+def test_symbol_resolution_searches_the_broker_when_name_is_unusual(monkeypatch) -> None:
+    """Si el broker nombra el oro raro (XAUUSD_raw, GOLDmicro...) y ningun alias
+    conocido encaja, el bot lo busca entre todos los simbolos en vez de fallar."""
+    import sys
+
+    class OddBroker:
+        TIMEFRAME_M1 = 1
+
+        def initialize(self, *a, **k) -> bool:
+            return True
+
+        def last_error(self):
+            return (1, "Success")
+
+        def symbol_info(self, name):
+            # solo existen estos dos nombres, ninguno esta en SYMBOL_ALIASES
+            return SimpleNamespace() if name in ("XAUUSD_raw", "EURUSDx") else None
+
+        def symbol_select(self, name, enable) -> bool:
+            return True
+
+        def symbols_get(self):
+            return [
+                SimpleNamespace(name="XAUUSD_raw"),
+                SimpleNamespace(name="GOLDMICRO"),  # tambien encaja, pero es mas largo
+                SimpleNamespace(name="EURUSDx"),
+                SimpleNamespace(name="US30.cash"),
+            ]
+
+    monkeypatch.setitem(sys.modules, "MetaTrader5", OddBroker())
+    feed = live.MT5Feed(Secrets(discord_bot_token="x"), ["XAUUSD", "EURUSD"])
+    assert feed.broker_symbols["XAUUSD"] == "XAUUSD_raw"  # el mas corto que encaja
+    assert feed.broker_symbols["EURUSD"] == "EURUSDx"
+
+
+def test_symbol_not_offered_at_all_raises(monkeypatch) -> None:
+    import sys
+
+    class NoGold:
+        TIMEFRAME_M1 = 1
+
+        def initialize(self, *a, **k) -> bool:
+            return True
+
+        def last_error(self):
+            return (1, "Success")
+
+        def symbol_info(self, name):
+            return None
+
+        def symbol_select(self, name, enable) -> bool:
+            return True
+
+        def symbols_get(self):
+            return [SimpleNamespace(name="US30"), SimpleNamespace(name="BTCUSD")]
+
+    monkeypatch.setitem(sys.modules, "MetaTrader5", NoGold())
+    with pytest.raises(live.LiveFeedError):
+        live.MT5Feed(Secrets(discord_bot_token="x"), ["XAUUSD"])
+
+
 def test_no_new_bars_means_complete_until_stays_put(feed, monkeypatch) -> None:
     """Sin velas nuevas (terminal abierto pero sin broker, o mercado cerrado)
     los datos NO estan completos hasta 'ahora', sino hasta donde estaban."""
