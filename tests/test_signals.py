@@ -6,7 +6,14 @@ import numpy as np
 import pandas as pd
 
 from finance_bot.data.calendar import EconomicEvent
-from finance_bot.engine.signals import Signal, SignalEngine, VoteView, probability_ladder, similar_cases
+from finance_bot.engine.signals import (
+    LadderStep,
+    Signal,
+    SignalEngine,
+    VoteView,
+    probability_ladder,
+    similar_cases,
+)
 
 
 def _history(n: int = 400, seed: int = 0) -> pd.DataFrame:
@@ -85,6 +92,39 @@ def _signal(**overrides) -> Signal:
     )
     base.update(overrides)
     return Signal(**base)
+
+
+def _ladder_at(*rs: float) -> list[LadderStep]:
+    return [LadderStep(r, 0.5, 0.4, 0.6) for r in rs]
+
+
+def test_signal_targets_prices_are_correct_both_directions() -> None:
+    ladder = _ladder_at(1.0, 2.0, 3.0)
+    long = _signal(direction=1, entry=100.0, r_price=2.0, targets_r=(1.0, 2.0), extra_target_r=3.0, ladder=ladder)
+    rows = long.targets()
+    assert [r[0] for r in rows] == ["TP1", "TP2", "TP3"]
+    assert [r[1] for r in rows] == [102.0, 104.0, 106.0]  # entry + dir*r_price*R
+    assert [r[2] for r in rows] == [1.0, 2.0, 3.0]
+    assert all(r[3] == 0.5 for r in rows)  # probabilidad tomada de la escalera
+
+    short = _signal(direction=-1, entry=100.0, r_price=2.0, targets_r=(1.0, 2.0), extra_target_r=3.0, ladder=ladder)
+    assert [r[1] for r in short.targets()] == [98.0, 96.0, 94.0]  # en corto, hacia abajo
+
+
+def test_signal_targets_omit_tp3_when_not_beyond_tp2() -> None:
+    s = _signal(targets_r=(1.0, 2.0), extra_target_r=2.0, ladder=_ladder_at(1.0, 2.0))  # TP3 no supera TP2
+    assert [r[0] for r in s.targets()] == ["TP1", "TP2"]
+
+
+def test_eurusd_rate_picks_first_available_timeframe() -> None:
+    bars = {
+        "M15": pd.DataFrame({"close": [1.09, 1.10]}),
+        "H1": pd.DataFrame({"close": [1.20]}),
+    }
+    assert SignalEngine._eurusd_rate(bars) == 1.10  # M15 tiene prioridad y coge el ultimo cierre
+    assert SignalEngine._eurusd_rate({"H1": pd.DataFrame({"close": [1.23]})}) == 1.23
+    assert SignalEngine._eurusd_rate(None) is None
+    assert SignalEngine._eurusd_rate({}) is None
 
 
 def test_gates_strict_mode(cfg) -> None:
