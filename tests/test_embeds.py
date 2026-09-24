@@ -157,6 +157,31 @@ def test_panel_shows_open_signals_and_kill_switch(cfg) -> None:
     assert "+0.75R" in text and "drawdown real de 13R" in text
 
 
+def test_panel_flags_stale_or_delayed_data(cfg) -> None:
+    """Si el bot no recibe velas frescas, el panel lo avisa de un vistazo."""
+    from finance_bot.engine.signals import Analysis
+
+    stale = Analysis(
+        symbol="XAUUSD",
+        generated_at=datetime(2026, 9, 24, 11, tzinfo=UTC),
+        data_until=None,
+        feed="MT5",
+        quote=None,
+        views={},
+        signals=[],
+        news=[],
+        warnings=["MT5 lleva 120 min sin velas nuevas: terminal sin conexion. Con datos viejos no se emiten señales."],
+    )
+    health = {
+        "kill_switch": (False, None),
+        "mode": "informative",
+        "feed": "MT5",
+        "last_scan": datetime(2026, 9, 24, 11, tzinfo=UTC),
+    }
+    text = embeds.to_text(embeds.panel_embed({"XAUUSD": stale}, pd.DataFrame(), health, cfg))
+    assert "Datos" in text and "sin velas nuevas" in text
+
+
 def test_naive_timestamps_are_treated_as_utc() -> None:
     assert embeds.when(pd.Timestamp("2026-09-22 10:00")) == embeds.when(pd.Timestamp("2026-09-22 10:00", tz="UTC"))
 

@@ -359,6 +359,16 @@ def panel_embed(
         setups = [f"{emit_status(s)[:1]} {s.side} {s.tf} · {pct(s.p_tp1)}" for s in a.signals[:2]]
         body = "\n".join(setups) if setups else "sin entradas"
         _add(embed, symbol, f"{head}{_bias_line(a)}\n{body}", True)
+    # Salud de los datos de un vistazo: si el bot no esta recibiendo velas frescas
+    # (MT5 sin conexion con el broker, o fuente con retraso) no puede emitir, y hay
+    # que verlo aqui sin abrir /estado.
+    degraded = []
+    for a in analyses.values():
+        for w in a.warnings:
+            if ("velas nuevas" in w or "tiempo real" in w) and w not in degraded:
+                degraded.append(w)
+    if degraded:
+        _add(embed, "⚠️ Datos", "\n".join(esc(w) for w in degraded[:2]))
     if not open_signals.empty:
         rows = []
         for _, s in open_signals.iterrows():
