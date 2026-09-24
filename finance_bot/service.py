@@ -74,16 +74,17 @@ def freshness_note(complete_until: pd.Timestamp | None, now: datetime, market_op
     return f"{when} ⚠️ ATRASADO: ¿terminal MT5 sin conexion con el broker?"
 
 
-def should_reconnect(feed_realtime: bool, newest_data: pd.Timestamp | None, now: datetime, market_open: bool) -> bool:
+def should_reconnect(feed_realtime: bool, data_until: pd.Timestamp | None, now: datetime, market_open: bool) -> bool:
     """¿Conviene recrear la fuente de datos? Si no es tiempo real, para intentar
-    subir a MT5. Si es tiempo real pero sus datos llevan mas de STALE_REALTIME
-    congelados con el mercado abierto (terminal abierto pero sin feed del broker,
-    sin error de IPC), para reconectar en vez de quedarse mudo."""
+    subir a MT5. Si es tiempo real pero los datos (el instrumento mas atrasado)
+    llevan mas de STALE_REALTIME congelados con el mercado abierto (terminal
+    abierto pero sin feed del broker, sin error de IPC), para reconectar en vez
+    de quedarse mudo."""
     if not feed_realtime:
         return True
-    if newest_data is None or not market_open:
+    if data_until is None or not market_open:
         return False
-    return now - newest_data.to_pydatetime() > STALE_REALTIME
+    return now - data_until.to_pydatetime() > STALE_REALTIME
 
 
 def correlated_exposure(symbol: str, direction: int, exposure: list[tuple[str, int]]) -> tuple[str, int] | None:
@@ -139,8 +140,11 @@ class BotService:
             return self.feed
         if now - self._feed_checked < FEED_RETRY:
             return self.feed
-        newest = max(self.complete_until.values()) if self.complete_until else None
-        if not should_reconnect(self.feed.realtime, newest, now, forex_market_open(now)):
+        # El instrumento MAS atrasado: MT5 puede congelar el feed de un simbolo
+        # (p.ej. el oro) mientras otro (EURUSD) sigue fresco; con el maximo no se
+        # detectaria. Si el mas viejo esta congelado, se reconecta igual.
+        oldest = min(self.complete_until.values()) if self.complete_until else None
+        if not should_reconnect(self.feed.realtime, oldest, now, forex_market_open(now)):
             return self.feed
         self._feed_checked = now
         was_realtime = self.feed.realtime  # ya era tiempo real -> el motivo es datos congelados

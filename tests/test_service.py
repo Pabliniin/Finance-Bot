@@ -282,6 +282,31 @@ def test_stale_realtime_not_reconnected_when_market_closed(service: BotService, 
     assert service._ensure_feed() is frozen
 
 
+def test_reconnects_when_one_symbol_is_frozen_even_if_another_is_fresh(service: BotService, monkeypatch) -> None:
+    """MT5 puede congelar el feed de un simbolo (oro) y seguir fresco en otro
+    (EURUSD): mirar el mas atrasado lo detecta; el maximo no."""
+    from datetime import UTC, datetime
+
+    from finance_bot import service as service_module
+
+    class Frozen:
+        name, realtime = "MT5", True
+
+    class Fresh:
+        name, realtime = "MT5", True
+
+    service.feed = Frozen()  # type: ignore[assignment]
+    now = pd.Timestamp.now(tz="UTC")
+    service.complete_until = {
+        "XAUUSD": now - pd.Timedelta(minutes=40),  # oro congelado
+        "EURUSD": now - pd.Timedelta(minutes=1),  # euro fresco
+    }
+    service._feed_checked = datetime.now(UTC) - service_module.FEED_RETRY
+    monkeypatch.setattr(service_module, "forex_market_open", lambda now: True)
+    monkeypatch.setattr(service_module, "create_feed", lambda cfg, secrets: Fresh())
+    assert isinstance(service._ensure_feed(), Fresh)
+
+
 def test_correlated_exposure_detects_same_dollar_direction() -> None:
     """Largo en oro y largo en EURUSD apuestan los dos por un dolar debil: van
     en el mismo sentido y se avisa. Sentidos opuestos se compensan."""
