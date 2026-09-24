@@ -119,3 +119,25 @@ def test_state_written_by_powershell_with_bom_is_readable(sandbox) -> None:
     """preparar_traslado.ps1 escribe el JSON con BOM (Set-Content -Encoding utf8)."""
     (sandbox / "data" / "update_state.json").write_bytes(b'\xef\xbb\xbf{"sha": "empaquetado", "previous": false}')
     assert updater.current_sha() == "empaquetado"
+
+
+def test_restart_reexecs_the_process_on_posix(monkeypatch) -> None:
+    """En Linux el bot se reinicia solo re-ejecutandose, sin depender de un
+    supervisor externo."""
+    calls: dict = {}
+    monkeypatch.setattr(updater.sys, "platform", "linux")
+    monkeypatch.setattr(updater.os, "execv", lambda exe, args: calls.setdefault("execv", (exe, args)))
+    updater.restart_process()
+    exe, args = calls["execv"]
+    assert exe == updater.sys.executable
+    assert args[1:] == ["-m", "finance_bot", "run"]
+
+
+def test_restart_uses_the_task_on_windows(monkeypatch) -> None:
+    """En Windows se mantiene el metodo probado (tarea programada), sin os.execv."""
+    calls: dict = {}
+    monkeypatch.setattr(updater.sys, "platform", "win32")
+    monkeypatch.setattr(updater.os, "execv", lambda *a: calls.setdefault("execv", True))
+    monkeypatch.setattr(updater.subprocess, "Popen", lambda *a, **k: calls.setdefault("popen", True))
+    updater.restart_process()
+    assert calls.get("popen") and "execv" not in calls

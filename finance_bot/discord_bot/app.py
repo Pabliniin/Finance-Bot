@@ -414,8 +414,8 @@ class FinanceBot(discord.Client):
             await self.send(
                 embeds.simple_embed("🔁 Reinicio", "Llevo demasiado sin completar un ciclo; me reinicio.", embeds.AMBER)
             )
-            updater.schedule_restart()
-            os._exit(updater.EXIT_RESTART)  # el hilo colgado impediria una salida limpia
+            updater.restart_process()  # POSIX: re-ejecuta en el sitio; Windows: programa la tarea
+            os._exit(updater.EXIT_RESTART)  # (Windows) el hilo colgado impediria una salida limpia
 
     async def _scan_once(self) -> None:
         service = self.service
@@ -860,6 +860,6 @@ def run_bot() -> int:
             "a medias en el portal (pestaña Bot)."
         ) from None
     if bot.restart_requested:
-        updater.schedule_restart()
+        updater.restart_process()  # POSIX: no retorna (re-ejecuta); Windows: programa la tarea y sale
         return updater.EXIT_RESTART
     return 0

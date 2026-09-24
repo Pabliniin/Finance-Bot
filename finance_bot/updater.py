@@ -17,6 +17,7 @@ from __future__ import annotations
 import io
 import json
 import logging
+import os
 import shutil
 import subprocess
 import sys
@@ -188,20 +189,38 @@ def check_and_apply() -> bool:
 TASK_NAME = "FinanceBot"
 
 
-def schedule_restart() -> None:
-    """Deja programado que la tarea vuelva a arrancar en unos segundos, ya con
-    este proceso muerto. Si el bot no corre bajo la tarea, no pasa nada: el
-    comando falla en silencio y quien lo arranco a mano lo vuelve a lanzar."""
-    if sys.platform != "win32":
+def restart_process() -> None:
+    """Reinicia el bot con el codigo (posiblemente nuevo) ya en disco.
+
+    - POSIX (Linux del mini PC): RE-EJECUTA el propio proceso con os.execv. Asi el
+      bot se reinicia solo sin depender de ningun supervisor (systemd, un bucle,
+      etc.); antes en Linux `schedule_restart` no hacia nada y un `run` que salia
+      tras actualizar se quedaba muerto salvo que alguien hubiera montado un
+      supervisor. os.execv conserva el mismo PID, asi que si ademas hay systemd no
+      hay doble arranque.
+    - Windows: se mantiene el metodo probado (la tarea programada lo relanza tras
+      unos segundos, con este proceso ya muerto). os.execv en Windows deja la
+      consola/tarea en un estado raro, por eso no se usa alli.
+
+    En POSIX no retorna (el proceso se reemplaza); si el execv falla, retorna y el
+    proceso saldra con EXIT_RESTART para que un supervisor, si lo hay, lo reinicie.
+    """
+    if sys.platform == "win32":
+        flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        try:
+            subprocess.Popen(
+                ["cmd", "/c", f"timeout /t 8 /nobreak >nul && schtasks /run /tn {TASK_NAME}"],
+                creationflags=flags,
+                close_fds=True,
+            )
+        except OSError:
+            logger.warning("no se pudo programar el reinicio; la tarea lo reintentara sola")
         return
     try:
-        subprocess.Popen(
-            ["cmd", "/c", f"timeout /t 8 /nobreak >nul && schtasks /run /tn {TASK_NAME}"],
-            creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
-            close_fds=True,
-        )
-    except OSError:
-        logger.warning("no se pudo programar el reinicio; la tarea lo reintentara sola")
+        logger.info("Reiniciando el proceso (os.execv) con el codigo nuevo")
+        os.execv(sys.executable, [sys.executable, "-m", "finance_bot", "run"])
+    except OSError as exc:
+        logger.error("no se pudo re-ejecutar el proceso (%s); salgo para que un supervisor reinicie", exc)
 
 
 def run_update_command() -> int:
