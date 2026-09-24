@@ -211,6 +211,20 @@ def test_forex_market_open_matches_the_weekend_break() -> None:
     assert forex_market_open(datetime(2026, 9, 27, 22, tzinfo=UTC))  # domingo noche: reabre
 
 
+def test_freshness_note_flags_stale_but_not_on_weekends() -> None:
+    from datetime import UTC, datetime
+
+    from finance_bot.service import freshness_note
+
+    now = datetime(2026, 9, 23, 12, tzinfo=UTC)  # miercoles
+    fresh = pd.Timestamp(now) - pd.Timedelta(minutes=3)
+    stale = pd.Timestamp(now) - pd.Timedelta(minutes=90)
+    assert "✅" in freshness_note(fresh, now, market_open=True)
+    assert "ATRASADO" in freshness_note(stale, now, market_open=True)
+    assert "mercado cerrado" in freshness_note(stale, now, market_open=False)  # normal en finde
+    assert freshness_note(None, now, market_open=True) == "sin datos"
+
+
 def test_should_reconnect_rules() -> None:
     from datetime import UTC, datetime
 

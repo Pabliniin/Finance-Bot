@@ -59,6 +59,21 @@ def forex_market_open(now: datetime) -> bool:
     return not closed
 
 
+def freshness_note(complete_until: pd.Timestamp | None, now: datetime, market_open: bool) -> str:
+    """Frase honesta sobre lo frescos que estan los datos, para el health-check:
+    'MT5 OK' a secas engañaba cuando el terminal estaba abierto pero con datos
+    atrasados. Con el mercado cerrado, unos datos viejos son normales."""
+    if complete_until is None:
+        return "sin datos"
+    mins = int((pd.Timestamp(now) - complete_until).total_seconds() // 60)
+    when = f"{complete_until:%Y-%m-%d %H:%M} UTC (hace {mins} min)"
+    if mins <= 15:
+        return f"{when} ✅"
+    if not market_open:
+        return f"{when} · mercado cerrado (normal)"
+    return f"{when} ⚠️ ATRASADO: ¿terminal MT5 sin conexion con el broker?"
+
+
 def should_reconnect(feed_realtime: bool, newest_data: pd.Timestamp | None, now: datetime, market_open: bool) -> bool:
     """¿Conviene recrear la fuente de datos? Si no es tiempo real, para intentar
     subir a MT5. Si es tiempo real pero sus datos llevan mas de STALE_REALTIME
@@ -420,7 +435,12 @@ def run_health_check() -> int:
     try:
         service.refresh_data()
         feed_name = service.feed.name if service.feed else "?"
-        print(f"Fuente en vivo: {feed_name} OK; datos completos hasta {service.complete_until}")
+        now = datetime.now(UTC)
+        market_open = forex_market_open(now)
+        print(f"Fuente en vivo: {feed_name}" + ("" if market_open else " · mercado cerrado"))
+        for symbol in service.cfg.instruments:
+            note = freshness_note(service.complete_until.get(symbol), now, market_open)
+            print(f"  {symbol}: {note}")
     except (LiveFeedError, OSError) as exc:
         print(f"Fuente en vivo: ERROR {exc}")
     service.calendar.refresh(force=True)
