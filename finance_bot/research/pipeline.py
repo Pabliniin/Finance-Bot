@@ -47,11 +47,11 @@ logger = logging.getLogger(__name__)
 
 MODELS_DIR = PROJECT_ROOT / "models"
 REPORTS_DIR = PROJECT_ROOT / "reports"
-# M1 NO se entrena ni valida: no tiene historico propio fiable para etiquetar (sus
-# operaciones caben dentro de una sola vela base y resolverlas con velas horarias
-# las falsea), y en vivo usa M15 como proxy. Meter M1 aqui contaminaria el modelo
-# con cientos de miles de filas mal etiquetadas.
-RESEARCH_EXCLUDED_TF = frozenset({"M1"})
+# M1 y M5 NO se entrenan ni validan: no tienen historico propio fiable para
+# etiquetar (sus operaciones caben dentro de una sola vela base y resolverlas con
+# velas horarias las falsea), y en vivo usan M15 como proxy. Meterlas aqui
+# contaminaria el modelo con cientos de miles de filas mal etiquetadas.
+RESEARCH_EXCLUDED_TF = frozenset({"M1", "M5"})
 THRESHOLD_GRID = [round(x, 3) for x in np.arange(0.30, 0.801, 0.025)]
 MIN_TRADES_THRESHOLD = 100
 MIN_TRADES_GROUP = 30

@@ -17,8 +17,8 @@ from __future__ import annotations
 
 import pandas as pd
 
-TF_MINUTES: dict[str, int] = {"M1": 1, "M15": 15, "H1": 60, "H4": 240, "D1": 1440}
-HIGHER_TF: dict[str, str | None] = {"M1": "M15", "M15": "H1", "H1": "H4", "H4": "D1", "D1": None}
+TF_MINUTES: dict[str, int] = {"M1": 1, "M5": 5, "M15": 15, "H1": 60, "H4": 240, "D1": 1440}
+HIGHER_TF: dict[str, str | None] = {"M1": "M15", "M5": "M15", "M15": "H1", "H1": "H4", "H4": "D1", "D1": None}
 
 _NY = "America/New_York"
 _SESSION_SHIFT = pd.Timedelta(hours=7)  # 17:00 NY + 7h = 00:00 -> los bins de dia/4h caen en las fronteras de sesion
@@ -52,7 +52,7 @@ def resample(
     if base.empty:
         return pd.DataFrame(columns=["open", "high", "low", "close", "volume", "close_time"])
 
-    if tf in ("M1", "M15", "H1"):
+    if tf in ("M1", "M5", "M15", "H1"):
         freq = f"{TF_MINUTES[tf]}min"
         bars = base.resample(freq, label="left", closed="left").agg(_AGG).dropna(subset=["open"])
         bars["close_time"] = bars.index + pd.Timedelta(minutes=TF_MINUTES[tf])

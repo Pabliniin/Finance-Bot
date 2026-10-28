@@ -16,8 +16,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = PROJECT_ROOT / "config" / "settings.yaml"
 
-Timeframe = Literal["M1", "M15", "H1", "H4", "D1"]
-TIMEFRAMES: tuple[Timeframe, ...] = ("M1", "M15", "H1", "H4", "D1")
+Timeframe = Literal["M1", "M5", "M15", "H1", "H4", "D1"]
+TIMEFRAMES: tuple[Timeframe, ...] = ("M1", "M5", "M15", "H1", "H4", "D1")
 
 
 class CostSpec(BaseModel):

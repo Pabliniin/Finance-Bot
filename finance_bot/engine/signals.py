@@ -44,6 +44,7 @@ LADDER_R = (0.5, 1.0, 1.5, 2.0, 3.0)
 # misma operacion que se valido: no se emite.
 MAX_EMIT_DELAY = {
     "M1": timedelta(minutes=2),
+    "M5": timedelta(minutes=5),
     "M15": timedelta(minutes=10),
     "H1": timedelta(minutes=20),
     "H4": timedelta(minutes=60),
@@ -58,7 +59,7 @@ M1_ANALYSIS_BARS = 3000
 # El historico fuera de muestra no tiene filas M1 (el modelo se valido en M15+).
 # Para dar probabilidad y expectativa a una señal M1 se usan como proxy los casos
 # de M15, la temporalidad mas parecida. Va SIEMPRE marcado como proxy.
-SIMILAR_PROXY = {"M1": "M15"}
+SIMILAR_PROXY = {"M1": "M15", "M5": "M15"}
 # Con MT5 y mercado abierto, mas de esto sin velas nuevas es un terminal sin conexion.
 STALE_REALTIME = timedelta(minutes=15)
 # Coste (spread+deslizamiento) que ya se lleva una parte notable del riesgo: no
@@ -312,12 +313,12 @@ class SignalEngine:
         now = now or datetime.now(UTC)
         symbols = list(self.cfg.instruments)
         other = next((s for s in symbols if s != symbol), None)
-        # M1 y M15 solo con tiempo real (MT5): el respaldo Dukascopy llega con ~1h de retraso.
-        timeframes = [tf for tf in self.cfg.timeframes if realtime or tf not in ("M1", "M15")]
+        # M1/M5/M15 solo con tiempo real: el respaldo Dukascopy llega con ~1h de retraso.
+        timeframes = [tf for tf in self.cfg.timeframes if realtime or tf not in ("M1", "M5", "M15")]
         warnings: list[str] = []
         if not realtime:
             warnings.append(
-                "Fuente sin tiempo real (Dukascopy): M1 y M15 desactivados y datos con hasta ~1h de retraso."
+                "Fuente sin tiempo real (Dukascopy): M1, M5 y M15 desactivados y datos con hasta ~1h de retraso."
             )
         elif complete_until is not None and now - complete_until.to_pydatetime() > STALE_REALTIME:
             minutes = int((now - complete_until.to_pydatetime()).total_seconds() // 60)

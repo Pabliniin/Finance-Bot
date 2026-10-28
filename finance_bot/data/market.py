@@ -17,6 +17,9 @@ from finance_bot.config import AppConfig
 from finance_bot.data.bars import TF_MINUTES, resample
 from finance_bot.data.store import BarStore, empty_bars
 
+# Temporalidades que se agregan desde la base M1 (el resto, desde la base H1).
+_M1_BASED = {"M1", "M5", "M15"}
+
 
 class MarketData:
     def __init__(self, cfg: AppConfig):
@@ -44,7 +47,8 @@ class MarketData:
     def base_for(
         self, symbol: str, tf: str, start: datetime | None = None, end: datetime | None = None
     ) -> pd.DataFrame:
-        return self.base_m1(symbol, start, end) if tf == "M15" else self.base_h1(symbol, start, end)
+        # M1/M5/M15 se construyen desde la base M1; H1/H4/D1 desde la base H1.
+        return self.base_m1(symbol, start, end) if tf in _M1_BASED else self.base_h1(symbol, start, end)
 
     def bars(
         self,
@@ -57,7 +61,7 @@ class MarketData:
         base = self.base_for(symbol, tf, start, end)
         if base.empty:
             return empty_bars()
-        base_minutes = 1 if tf == "M15" else 60
+        base_minutes = 1 if tf in _M1_BASED else 60
         return resample(base, tf, complete_until=complete_until, base_minutes=base_minutes)
 
     def all_timeframes(
@@ -73,7 +77,7 @@ class MarketData:
         `m1_start` permite cargar menos historico M1 (en vivo, M15 solo
         necesita unas semanas; cargar años de M1 en cada escaneo es inutil)."""
         out: dict[str, pd.DataFrame] = {}
-        m1_tfs = {"M1", "M15"}
+        m1_tfs = {"M1", "M5", "M15"}
         need_h1 = any(tf not in m1_tfs for tf in timeframes)
         need_m1 = any(tf in m1_tfs for tf in timeframes)
         h1_base = self.base_h1(symbol, start, end) if need_h1 else empty_bars()

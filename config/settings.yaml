@@ -37,6 +37,7 @@ instruments:
 #    pero nunca a menos de sl_atr_min ni a mas de sl_atr_max ATR del precio
 timeframes:
   M1:  {max_bars: 20, sl_atr_min: 1.2, sl_atr_max: 3.0, swing_lookback: 8}   # scalping: stops algo mas anchos en ATR (el ruido de M1)
+  M5:  {max_bars: 24, sl_atr_min: 1.1, sl_atr_max: 2.8, swing_lookback: 8}   # scalping algo mas tranquilo que M1 (cierre por tiempo ~2h)
   M15: {max_bars: 32, sl_atr_min: 1.0, sl_atr_max: 2.5, swing_lookback: 8}
   H1:  {max_bars: 48, sl_atr_min: 1.0, sl_atr_max: 2.5, swing_lookback: 8}
   H4:  {max_bars: 30, sl_atr_min: 1.0, sl_atr_max: 2.5, swing_lookback: 6}
@@ -81,7 +82,7 @@ signals:
 # Sesiones (UTC) en las que se aceptan señales intradia. Fuera de ellas la
 # liquidez es menor y los costes relativos se disparan.
 sessions_utc:
-  intraday_timeframes: [M1, M15, H1]
+  intraday_timeframes: [M1, M5, M15, H1]
   allowed_hours: [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
 
 data:

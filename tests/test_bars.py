@@ -12,6 +12,16 @@ def _week_of_m1(start_utc: str, days: float) -> pd.DataFrame:
     return make_m1(start_utc, list(2000 + np.arange(n) * 0.01))
 
 
+def test_m5_aggregates_ohlcv_from_m1() -> None:
+    m1 = make_m1("2024-03-12 10:00", [1.0, 3.0, 2.0, 2.5, 2.2])  # 5 velas de 1 min = una M5
+    bars = resample(m1, "M5", base_minutes=1)
+    first = bars.iloc[0]
+    assert bars.index[0] == pd.Timestamp("2024-03-12 10:00", tz="UTC")
+    assert first.close_time == pd.Timestamp("2024-03-12 10:05", tz="UTC")
+    assert first.open == 1.0 and first.high == 3.0 and first.low == 1.0 and first.close == 2.2
+    assert first.volume == 5
+
+
 def test_m15_aggregates_ohlcv() -> None:
     m1 = make_m1("2024-03-12 10:00", [1.0, 3.0, 2.0] + [2.5] * 12)
     bars = resample(m1, "M15", base_minutes=1)

@@ -246,7 +246,7 @@ def analysis_embed(a: Analysis, cfg: AppConfig) -> discord.Embed:
         color=color,
         timestamp=datetime.now(UTC),
     )
-    lines = [_view_line(a.views[tf], digits) for tf in ("D1", "H4", "H1", "M15", "M1") if tf in a.views]
+    lines = [_view_line(a.views[tf], digits) for tf in ("D1", "H4", "H1", "M15", "M5", "M1") if tf in a.views]
     _add(embed, "Temporalidades", "\n".join(lines))
     if a.signals:
         rows = []
@@ -331,7 +331,7 @@ def event_embed(event: dict, cfg: AppConfig) -> discord.Embed:
 def _bias_line(a: Analysis) -> str:
     parts = [
         f"{tf} {BIAS_ICON[a.views[tf].bias]}{a.views[tf].score:+d}"
-        for tf in ("D1", "H4", "H1", "M15", "M1")
+        for tf in ("D1", "H4", "H1", "M15", "M5", "M1")
         if tf in a.views
     ]
     return " · ".join(parts) if parts else "sin datos"
