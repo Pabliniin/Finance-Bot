@@ -98,7 +98,7 @@ class DataConfig(BaseModel):
     history_start: str
     m1_history_start: str
     store_dir: str
-    live_source: Literal["auto", "mt5", "dukascopy"]
+    live_source: Literal["auto", "mt5", "oanda", "dukascopy"]
 
     @property
     def store_path(self) -> Path:
@@ -204,6 +204,11 @@ class Secrets(BaseSettings):
     mt5_password: str = ""
     mt5_server: str = ""
     mt5_terminal_path: str = ""
+    # OANDA (tiempo real sin MT5, funciona en Linux). Cuenta DEMO/practica: el token
+    # y el id de cuenta se sacan del panel de OANDA (practice). Nunca una cuenta real.
+    oanda_api_token: str = ""
+    oanda_account_id: str = ""
+    oanda_env: str = "practice"  # "practice" (demo) o "live"; por defecto demo
 
     @field_validator("discord_guild_id", "discord_channel_id", "mt5_login", mode="before")
     @classmethod

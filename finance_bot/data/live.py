@@ -26,6 +26,7 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any, Protocol
 
 import pandas as pd
+import requests
 
 from finance_bot.config import AppConfig, Secrets
 from finance_bot.data.dukascopy import DukascopyClient, DukascopyError, decode_ticks, ticks_hour_url, ticks_to_m1
@@ -217,6 +218,107 @@ class MT5Feed:
         return (float(info.swap_long), float(info.swap_short)) if info is not None else None
 
 
+OANDA_SYMBOLS = {"XAUUSD": "XAU_USD", "EURUSD": "EUR_USD"}
+OANDA_HOSTS = {
+    "practice": "https://api-fxpractice.oanda.com",
+    "live": "https://api-fxtrade.oanda.com",
+}
+OANDA_MAX_CANDLES = 5000  # tope de la API por peticion
+
+
+class OandaFeed:
+    """Tiempo real por la API v20 de OANDA (REST). Funciona en Linux, sin MT5.
+
+    Entrega velas M1 BID en UTC (misma convencion que el resto del sistema) y
+    cotizacion bid/ask en vivo. Por defecto usa la cuenta DEMO/practica: el bot
+    solo LEE precios, nunca opera. Los tiempos de OANDA ya vienen en UTC
+    (RFC3339), asi que no hay el lio de husos horarios de MT5.
+    """
+
+    realtime = True
+
+    def __init__(self, secrets: Secrets, symbols: list[str]):
+        if not secrets.oanda_api_token:
+            raise LiveFeedError("falta OANDA_API_TOKEN en .env (panel de OANDA practice)")
+        unknown = [s for s in symbols if s not in OANDA_SYMBOLS]
+        if unknown:
+            raise LiveFeedError(f"OANDA no mapea estos instrumentos: {unknown}")
+        self.symbols = list(symbols)
+        self.account_id = secrets.oanda_account_id
+        self.env = secrets.oanda_env or "practice"
+        self.base = OANDA_HOSTS.get(self.env, OANDA_HOSTS["practice"])
+        self.name = "OANDA (demo)" if self.env == "practice" else "OANDA"
+        self._session = requests.Session()
+        self._session.headers.update({"Authorization": f"Bearer {secrets.oanda_api_token}"})
+        self._check_auth()  # falla claro al arrancar si el token no vale
+
+    def _check_auth(self) -> None:
+        try:
+            response = self._session.get(f"{self.base}/v3/accounts", timeout=15)
+            response.raise_for_status()
+        except requests.RequestException as exc:
+            raise LiveFeedError(f"OANDA rechaza las credenciales o no responde: {exc}") from exc
+
+    def fetch_m1(self, symbol: str, since: datetime) -> tuple[pd.DataFrame, pd.Timestamp]:
+        inst = OANDA_SYMBOLS[symbol]
+        now = pd.Timestamp.now(tz="UTC")
+        frm = pd.Timestamp(since)
+        frm = frm.tz_localize("UTC") if frm.tzinfo is None else frm.tz_convert("UTC")
+        frm = max(frm, now - pd.Timedelta(minutes=OANDA_MAX_CANDLES))  # tope de la API
+        params = {
+            "granularity": "M1",
+            "price": "B",  # velas BID
+            "from": frm.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "includeFirst": "true",
+        }
+        try:
+            response = self._session.get(f"{self.base}/v3/instruments/{inst}/candles", params=params, timeout=20)
+            response.raise_for_status()
+            candles = response.json().get("candles", [])
+        except (requests.RequestException, ValueError) as exc:
+            raise LiveFeedError(f"OANDA no devolvio velas de {inst}: {exc}") from exc
+
+        rows, newest = [], None
+        for candle in candles:
+            if not candle.get("complete"):  # la vela en formacion nunca se entrega
+                continue
+            stamp = pd.Timestamp(candle["time"]).tz_convert("UTC").floor("min")  # tiempo de APERTURA
+            b = candle["bid"]
+            vol = float(candle.get("volume", 0))
+            rows.append((stamp, float(b["o"]), float(b["h"]), float(b["l"]), float(b["c"]), vol))
+            newest = stamp
+        if not rows:
+            return empty_bars(), pd.Timestamp(since).floor("min")
+        bars = pd.DataFrame(rows, columns=["time", "open", "high", "low", "close", "volume"]).set_index("time")
+        bars.index = pd.DatetimeIndex(bars.index, name="time").as_unit("ns")
+        complete_until = min(now.floor("min"), pd.Timestamp(newest) + pd.Timedelta(minutes=1))
+        bars = bars[(bars.index >= pd.Timestamp(since)) & (bars.index + pd.Timedelta(minutes=1) <= complete_until)]
+        return bars[BAR_COLUMNS].astype("float64"), complete_until
+
+    def quote(self, symbol: str) -> tuple[float, float] | None:
+        if not self.account_id:
+            return None  # el precio en vivo necesita id de cuenta; sin el, se usa el ultimo cierre
+        inst = OANDA_SYMBOLS[symbol]
+        try:
+            response = self._session.get(
+                f"{self.base}/v3/accounts/{self.account_id}/pricing",
+                params={"instruments": inst},
+                timeout=15,
+            )
+            response.raise_for_status()
+            prices = response.json().get("prices", [])
+        except (requests.RequestException, ValueError):
+            return None
+        if not prices:
+            return None
+        try:
+            bid = float(prices[0]["bids"][0]["price"])
+            ask = float(prices[0]["asks"][0]["price"])
+        except (KeyError, IndexError, ValueError, TypeError):
+            return None
+        return (bid, ask) if bid > 0 and ask > 0 else None
+
+
 class DukascopyFeed:
     name = "Dukascopy (retraso ~1h)"
     realtime = False
@@ -266,6 +368,9 @@ class DukascopyFeed:
 
 
 def create_feed(cfg: AppConfig, secrets: Secrets) -> LiveFeed:
+    """Elige la fuente en vivo segun data.live_source. En 'auto' prueba MT5 (solo
+    Windows), luego OANDA (si hay token; tiempo real en Linux) y, si nada, el
+    respaldo Dukascopy con retraso."""
     source = cfg.data.live_source
     if source in ("auto", "mt5"):
         try:
@@ -273,5 +378,15 @@ def create_feed(cfg: AppConfig, secrets: Secrets) -> LiveFeed:
         except LiveFeedError as exc:
             if source == "mt5":
                 raise
-            logger.warning("MT5 no disponible (%s); usando Dukascopy con retraso de ~1h", exc)
+            logger.warning("MT5 no disponible (%s)", exc)
+    if source in ("auto", "oanda"):
+        if secrets.oanda_api_token:
+            try:
+                return OandaFeed(secrets, list(cfg.instruments))
+            except LiveFeedError as exc:
+                if source == "oanda":
+                    raise
+                logger.warning("OANDA no disponible (%s); usando Dukascopy con retraso de ~1h", exc)
+        elif source == "oanda":
+            raise LiveFeedError("live_source=oanda pero falta OANDA_API_TOKEN en .env")
     return DukascopyFeed(cfg)
