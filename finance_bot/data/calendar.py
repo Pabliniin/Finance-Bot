@@ -35,6 +35,11 @@ class EconomicEvent:
     forecast: str
     previous: str
 
+    @property
+    def key(self) -> str:
+        """Identificador estable para no avisar dos veces del mismo evento."""
+        return f"{self.currency}|{self.title}|{self.time.isoformat()}"
+
 
 class EconomicCalendar:
     def __init__(self) -> None:

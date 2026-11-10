@@ -2,9 +2,21 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pandas as pd
 
+from finance_bot.data.calendar import EconomicEvent
 from finance_bot.discord_bot import app as app_module
+
+
+def test_pick_news_alerts_skips_already_alerted() -> None:
+    now = datetime(2026, 11, 10, 12, 0, tzinfo=UTC)
+    a = EconomicEvent(now, "USD", "NFP", "High", "", "")
+    b = EconomicEvent(now, "EUR", "IPC", "High", "", "")
+    fresh = app_module.pick_news_alerts([a, b], alerted_keys={a.key})
+    assert fresh == [b]  # 'a' ya avisado -> solo queda 'b'
+    assert app_module.pick_news_alerts([a, b], {a.key, b.key}) == []
 
 
 def test_presence_says_market_closed(monkeypatch) -> None:

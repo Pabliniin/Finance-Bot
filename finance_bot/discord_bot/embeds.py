@@ -23,6 +23,7 @@ import numpy as np
 import pandas as pd
 
 from finance_bot.config import AppConfig
+from finance_bot.data.calendar import EconomicEvent
 from finance_bot.engine.exits import ExitAdvice
 from finance_bot.engine.signals import Analysis, Signal, TimeframeView
 from finance_bot.research.evaluation import reliability
@@ -603,6 +604,48 @@ def help_embed(cfg: AppConfig, validated: int, model_ready: bool) -> discord.Emb
             "**no recibiras señales de entrada**. `/validacion` tiene los numeros; `/modo informativo` las enseña "
             "igualmente, marcadas como no validadas.",
         )
+    return _disclaimer(embed, cfg)
+
+
+def news_alert_embed(event: EconomicEvent, cfg: AppConfig, minutes: int | None = None) -> discord.Embed:
+    """Aviso en el canal de noticias de un evento de alto impacto inminente."""
+    cuando = f"a las **{when(event.time)}**"
+    if minutes is not None:
+        cuando = f"en **{minutes} min** ({when(event.time)})" if minutes > 0 else f"**ahora** ({when(event.time)})"
+    embed = discord.Embed(
+        title=f"📰 {esc(event.currency)} · noticia de alto impacto",
+        description=f"## {esc(event.title)}\n{cuando}",
+        color=AMBER,
+        timestamp=datetime.now(UTC),
+    )
+    datos = [f"Prevision: {esc(event.forecast)}" for _ in (0,) if event.forecast]
+    datos += [f"Anterior: {esc(event.previous)}" for _ in (0,) if event.previous]
+    if datos:
+        _add(embed, "Datos", " · ".join(datos), True)
+    _add(
+        embed,
+        "⚠️ Ojo",
+        "En estas noticias el precio salta con fuerza y el spread se dispara. Con una operacion abierta, el stop "
+        "puede ejecutarse peor de lo previsto. El bot no emite señales intradia cerca de estas noticias.",
+    )
+    return _disclaimer(embed, cfg)
+
+
+def news_agenda_embed(events: list[EconomicEvent], cfg: AppConfig) -> discord.Embed:
+    """Agenda del dia (o proximos) de noticias de alto impacto para el canal de noticias."""
+    if not events:
+        return discord.Embed(
+            title="📅 Agenda de noticias",
+            description="No hay noticias de alto impacto USD/EUR en las proximas horas.",
+            color=GREY,
+        )
+    lines = [f"`{when(e.time)}` **{esc(e.currency)}** — {esc(e.title)}" for e in events[:15]]
+    embed = discord.Embed(
+        title="📅 Agenda de noticias de alto impacto",
+        description="\n".join(lines)[:4000],
+        color=BLUE,
+        timestamp=datetime.now(UTC),
+    )
     return _disclaimer(embed, cfg)
 
 

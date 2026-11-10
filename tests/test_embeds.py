@@ -41,6 +41,10 @@ def test_all_embed_types_render_within_discord_limits(cfg) -> None:
     _within_discord_limits(embeds.calendar_embed([], cfg))
     events = [EconomicEvent(now, "USD", f"Dato {i}", "High", "", "") for i in range(30)]
     _within_discord_limits(embeds.calendar_embed(events, cfg))
+    _within_discord_limits(embeds.news_agenda_embed(events, cfg))
+    _within_discord_limits(embeds.news_agenda_embed([], cfg))
+    _within_discord_limits(embeds.news_alert_embed(events[0], cfg, minutes=15))
+    _within_discord_limits(embeds.news_alert_embed(EconomicEvent(now, "EUR", "IPC", "High", "2.1%", "2.0%"), cfg))
 
     health = {
         "kill_switch": (True, "drawdown real de 13R"),

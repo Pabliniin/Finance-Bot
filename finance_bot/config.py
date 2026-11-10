@@ -204,6 +204,7 @@ class Secrets(BaseSettings):
     # arrancar y elige el primer canal donde puede escribir (y te lo dice).
     discord_guild_id: int = 0
     discord_channel_id: int = 0
+    discord_news_channel_id: int = 0  # canal aparte para las noticias de alto impacto (0 = mismo canal)
     discord_admin_user_ids: str = ""  # quien puede cambiar ajustes; vacio = cualquiera del servidor
     mt5_login: int = 0
     mt5_password: str = ""
@@ -215,7 +216,7 @@ class Secrets(BaseSettings):
     oanda_account_id: str = ""
     oanda_env: str = "practice"  # "practice" (demo) o "live"; por defecto demo
 
-    @field_validator("discord_guild_id", "discord_channel_id", "mt5_login", mode="before")
+    @field_validator("discord_guild_id", "discord_channel_id", "discord_news_channel_id", "mt5_login", mode="before")
     @classmethod
     def _blank_means_unset(cls, value: object) -> object:
         """En el .env se dejan vacios los opcionales: vacio = 0 = sin fijar."""

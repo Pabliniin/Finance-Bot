@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import json
 import logging
 import os
 from collections.abc import Callable
@@ -42,6 +43,9 @@ EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="finance-bot-wor
 CHANNEL_PREFERENCE = ("senales", "señales", "signals", "trading", "alertas", "bot", "general")
 PANEL_SETTING = "discord_panel_message_id"
 CHANNEL_SETTING = "discord_channel_id"
+NEWS_CHANNEL_SETTING = "discord_news_channel_id"
+NEWS_ALERTED_SETTING = "news_alerted_keys"
+NEWS_ALERT_LEAD_MIN = 30  # avisar de una noticia de alto impacto hasta 30 min antes
 # Si en este tiempo no se completa ningun ciclo, algo esta colgado y se reinicia el proceso.
 WATCHDOG_STALL = timedelta(minutes=15)
 
@@ -66,6 +70,11 @@ def panel_view(symbols: list[str]) -> discord.ui.View:
     return view
 
 
+def pick_news_alerts(events: list, alerted_keys: set[str]) -> list:
+    """Eventos cuyo aviso aun no se ha enviado (dedupe por su clave estable)."""
+    return [e for e in events if e.key not in alerted_keys]
+
+
 class FinanceBot(discord.Client):
     def __init__(self, service: BotService):
         # Sin intents privilegiados: asi no hay que activar nada en el portal.
@@ -74,6 +83,7 @@ class FinanceBot(discord.Client):
         self.tree = app_commands.CommandTree(self)
         self.allowed_guild_ids: set[int] = set()
         self.channel: discord.TextChannel | None = None
+        self.news_channel: discord.TextChannel | None = None  # canal aparte de noticias (opcional)
         self.last_data_error: str | None = None
         self._ready_once = False
         self._panel_lock = asyncio.Lock()
@@ -148,6 +158,7 @@ class FinanceBot(discord.Client):
         for guild in guilds:
             await self._sync_commands(guild)
         await self._resolve_channel(guilds)
+        await self._resolve_news_channel()
         self._start_jobs()
         if guilds:
             await self._announce()
@@ -200,6 +211,23 @@ class FinanceBot(discord.Client):
             logger.info("Publicare en #%s (%s). Cambialo con DISCORD_CHANNEL_ID.", candidates[0].name, candidates[0].id)
             return
         logger.error("No encuentro ningun canal donde pueda escribir. Dame permiso de 'Enviar mensajes'.")
+
+    async def _resolve_news_channel(self) -> None:
+        """Canal aparte para las noticias (opcional): DISCORD_NEWS_CHANNEL_ID o el
+        comando /canal_noticias. Sin configurar, las noticias siguen en las señales."""
+        stored = self.service.tracker.get_setting(NEWS_CHANNEL_SETTING)
+        wanted = self.service.secrets.discord_news_channel_id or (int(stored) if stored else 0)
+        channel = self.get_channel(wanted) if wanted else None
+        self.news_channel = channel if isinstance(channel, discord.TextChannel) else None
+
+    async def send_news(self, embed: discord.Embed) -> None:
+        target = self.news_channel or self.channel
+        if target is None:
+            return
+        try:
+            await target.send(embed=embed)
+        except discord.HTTPException:
+            logger.exception("no se pudo enviar la noticia")
 
     async def _announce(self) -> None:
         """Arrancar no es noticia: el panel ya dice como esta todo. Solo se
@@ -417,6 +445,24 @@ class FinanceBot(discord.Client):
             updater.restart_process()  # POSIX: re-ejecuta en el sitio; Windows: programa la tarea
             os._exit(updater.EXIT_RESTART)  # (Windows) el hilo colgado impediria una salida limpia
 
+    async def _news_cycle(self, now: datetime) -> None:
+        """Avisa en el canal de noticias de los eventos de alto impacto inminentes
+        (hasta NEWS_ALERT_LEAD_MIN antes), sin repetir."""
+        if self.news_channel is None and self.channel is None:
+            return
+        events = self.service.calendar.upcoming(
+            self.service.cfg.signals.news_currencies, hours=NEWS_ALERT_LEAD_MIN / 60, now=now
+        )
+        alerted = set(json.loads(self.service.tracker.get_setting(NEWS_ALERTED_SETTING) or "[]"))
+        fresh = pick_news_alerts(events, alerted)
+        for event in fresh:
+            minutes = max(0, int((event.time - now).total_seconds() // 60))
+            await self.send_news(embeds.news_alert_embed(event, self.service.cfg, minutes))
+        if fresh:
+            cutoff = (now - timedelta(days=3)).isoformat()  # no guardar claves viejas para siempre
+            keep = {k for k in alerted | {e.key for e in fresh} if k.rsplit("|", 1)[-1] >= cutoff}
+            self.service.tracker.set_setting(NEWS_ALERTED_SETTING, json.dumps(sorted(keep)))
+
     async def _scan_once(self) -> None:
         service = self.service
         try:
@@ -431,6 +477,7 @@ class FinanceBot(discord.Client):
             await self.send(embeds.advice_embed(advice, service.cfg), ping=True)
         for event in result.events:
             await self.send(embeds.event_embed(event, service.cfg), ping=True)
+        await self._news_cycle(datetime.now(UTC))
         if result.kill_switch_reason:
             await self.send(
                 embeds.simple_embed(
@@ -494,6 +541,10 @@ class FinanceBot(discord.Client):
             weekly = await self.stats_embed("todo")
             weekly.title = "🗓 Resumen semanal (todo el historico del bot)"
             await self.send(weekly)
+        # agenda de noticias de alto impacto de las proximas 24 h
+        await self.run_blocking(service.calendar.refresh)
+        events = service.calendar.upcoming(service.cfg.signals.news_currencies, hours=24)
+        await self.send_news(embeds.news_agenda_embed(events, service.cfg))
 
     async def self_update(self) -> None:
         """Si hay codigo nuevo en GitHub, se aplica y el bot se reinicia solo
@@ -815,6 +866,20 @@ def register_commands(bot: FinanceBot) -> None:  # noqa: C901 - un bloque por co
         await interaction.response.defer(thinking=True, ephemeral=True)
         await bot.update_panel(force_new=True)
         await interaction.followup.send("✅ Panel recreado.", ephemeral=True)
+
+    @tree.command(name="canal_noticias", description="Usa ESTE canal para las noticias de alto impacto")
+    async def canal_noticias(interaction: discord.Interaction) -> None:
+        if not await guard(interaction, admin=True):
+            return
+        channel = interaction.channel
+        if not isinstance(channel, discord.TextChannel):
+            await interaction.response.send_message("Usa el comando dentro de un canal de texto.", ephemeral=True)
+            return
+        bot.service.tracker.set_setting(NEWS_CHANNEL_SETTING, str(channel.id))
+        bot.news_channel = channel
+        await interaction.response.send_message(
+            f"📰 Las noticias de alto impacto iran a #{channel.name} (agenda diaria y aviso antes de cada una)."
+        )
 
     @tree.command(name="ayuda", description="Como funciona el bot y que significa cada cosa")
     async def ayuda(interaction: discord.Interaction) -> None:
