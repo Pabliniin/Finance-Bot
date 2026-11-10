@@ -59,6 +59,8 @@ plans:
 signals:
   mode: informative              # informative: envia todos los setups, marcados como NO validados
                                  # strict: solo combinaciones con ventaja validada (hoy: ninguna)
+  focus_instruments: [EURUSD]           # el bot se centra en EUR/USD: solo emite de aqui
+  focus_timeframes: [M1, M5, M15, H1]   # y solo en estas temporalidades (el resto: contexto, visible en /analisis)
   min_probability_tp1: 0.0       # suelo EXTRA opcional en vivo (0 = usar solo el umbral validado de cada plan).
                                  # Subirlo da menos señales, no mas fiables: el umbral ya lo fija la validacion.
   min_expected_r: 0.05           # expectativa minima historica (en R, ya descontados costes)

@@ -558,6 +558,12 @@ class SignalEngine:
             strict_rule(f"probabilidad TP1 {s.p_tp1:.1%} por debajo del umbral validado {s.threshold:.1%}")
         if s.similar_n < cfg.min_similar_cases:
             strict_rule(f"solo {s.similar_n} casos similares (minimo {cfg.min_similar_cases})")
+        # Foco configurado: el bot se centra en ciertos instrumentos/temporalidades.
+        # El resto se ve en /analisis (contexto), pero no se emite.
+        if cfg.focus_instruments and s.symbol not in cfg.focus_instruments:
+            s.blockers.append(f"fuera del foco: el bot se centra en {', '.join(cfg.focus_instruments)}")
+        if cfg.focus_timeframes and s.tf not in cfg.focus_timeframes:
+            s.blockers.append(f"fuera del foco: temporalidades {', '.join(cfg.focus_timeframes)}")
         # Lo que sigue bloquea en AMBOS modos: no es cuestion de ventaja sino de
         # que la operacion sea ejecutable y segura tal como se describe.
         if cfg.min_probability_tp1 and s.p_tp1 < cfg.min_probability_tp1:

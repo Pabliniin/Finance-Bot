@@ -127,8 +127,41 @@ def test_eurusd_rate_picks_first_available_timeframe() -> None:
     assert SignalEngine._eurusd_rate({}) is None
 
 
+def _engine(cfg) -> SignalEngine:
+    """Motor con el FOCO vacio: estas pruebas ejercitan OTRAS puertas, no el foco."""
+    clean = cfg.model_copy(
+        update={"signals": cfg.signals.model_copy(update={"focus_instruments": [], "focus_timeframes": []})}
+    )
+    return SignalEngine(clean, md=None, artifacts=None)  # type: ignore[arg-type]
+
+
+def test_focus_blocks_what_is_out_of_focus(cfg) -> None:
+    """Con foco EUR/USD + M5/H1, solo eso emite; el resto se ve pero no se envia."""
+    focused = cfg.model_copy(
+        update={
+            "signals": cfg.signals.model_copy(
+                update={"focus_instruments": ["EURUSD"], "focus_timeframes": ["M5", "H1"]}
+            )
+        }
+    )
+    engine = SignalEngine(focused, md=None, artifacts=None)  # type: ignore[arg-type]
+    now = datetime(2026, 9, 22, 10, 5, tzinfo=UTC)
+
+    in_focus = _signal(symbol="EURUSD", tf="H1")
+    engine._apply_gates(in_focus, "informative", now)
+    assert not any("foco" in b for b in in_focus.blockers)
+
+    off_symbol = _signal(symbol="XAUUSD", tf="H1")
+    engine._apply_gates(off_symbol, "informative", now)
+    assert not off_symbol.emit and any("foco" in b for b in off_symbol.blockers)
+
+    off_tf = _signal(symbol="EURUSD", tf="M15")
+    engine._apply_gates(off_tf, "informative", now)
+    assert not off_tf.emit and any("foco" in b for b in off_tf.blockers)
+
+
 def test_gates_strict_mode(cfg) -> None:
-    engine = SignalEngine(cfg, md=None, artifacts=None)  # type: ignore[arg-type]
+    engine = _engine(cfg)
     now = datetime(2026, 9, 22, 10, tzinfo=UTC)
 
     good = _signal()
@@ -149,7 +182,7 @@ def test_gates_strict_mode(cfg) -> None:
 
 
 def test_informative_mode_turns_validation_and_ev_into_warnings(cfg) -> None:
-    engine = SignalEngine(cfg, md=None, artifacts=None)  # type: ignore[arg-type]
+    engine = _engine(cfg)
     s = _signal(validated=False, similar_ev=-0.10)
     engine._apply_gates(s, "informative", datetime(2026, 9, 22, 10, tzinfo=UTC))
     assert s.emit
@@ -159,7 +192,7 @@ def test_informative_mode_turns_validation_and_ev_into_warnings(cfg) -> None:
 def test_late_signal_never_emits_only_fresh_ones(cfg) -> None:
     """Solo señales frescas (recien disparadas). Una vela vieja no se emite en
     ningun modo: evita el aluvion de setups viejos al arrancar."""
-    engine = SignalEngine(cfg, md=None, artifacts=None)  # type: ignore[arg-type]
+    engine = _engine(cfg)
     late_now = datetime(2026, 9, 22, 11, 30, tzinfo=UTC)  # H1 cerro a las 10:00, 90 min tarde
     for mode in ("strict", "informative"):
         s = _signal(tf="H1", validated=False, similar_ev=0.10)
@@ -170,7 +203,7 @@ def test_late_signal_never_emits_only_fresh_ones(cfg) -> None:
 def test_weak_confluence_is_filtered_out(cfg) -> None:
     """Pocas estrategias a favor -> no se emite, ni en informativo: el usuario
     quiere señales solidas, no cualquier setup."""
-    engine = SignalEngine(cfg, md=None, artifacts=None)  # type: ignore[arg-type]
+    engine = _engine(cfg)
     now = datetime(2026, 9, 22, 10, 5, tzinfo=UTC)
     weak = _signal(  # 4 a favor, 3 en contra: confluencia neta 1 < 8
         votes_for=[VoteView(f"v{i}", "x", "trend", 1, "") for i in range(4)],
@@ -181,7 +214,7 @@ def test_weak_confluence_is_filtered_out(cfg) -> None:
 
 
 def test_news_blackout_blocks_intraday(cfg) -> None:
-    engine = SignalEngine(cfg, md=None, artifacts=None)  # type: ignore[arg-type]
+    engine = _engine(cfg)
     now = datetime(2026, 9, 22, 10, tzinfo=UTC)
     event = EconomicEvent(now + timedelta(hours=1), "USD", "CPI m/m", "High", "", "")
     s = _signal(news=[event])
@@ -217,7 +250,7 @@ def test_informative_mode_shows_setups_below_threshold_with_a_warning(cfg) -> No
     """El proposito del modo informativo es enseñar lo que ve: el umbral y los
     casos escasos pasan a avisos. Lo que sigue bloqueando es lo que hace que
     la operacion no sea ejecutable tal como se describe (llega tarde)."""
-    engine = SignalEngine(cfg, md=None, artifacts=None)  # type: ignore[arg-type]
+    engine = _engine(cfg)
     now = datetime(2026, 9, 22, 10, 5, tzinfo=UTC)
 
     low = _signal(validated=False, p_tp1=0.48, threshold=0.65, similar_n=5, similar_ev=-0.09)
@@ -260,7 +293,7 @@ def test_rank_shrinks_expected_value_of_small_samples() -> None:
 def test_extreme_cost_blocks_in_both_modes(cfg) -> None:
     """Si el coste (spread+deslizamiento) supera tu riesgo, la operacion no tiene
     sentido: no se emite en ningun modo."""
-    engine = SignalEngine(cfg, md=None, artifacts=None)  # type: ignore[arg-type]
+    engine = _engine(cfg)
     now = datetime(2026, 9, 22, 10, 5, tzinfo=UTC)
     for mode in ("strict", "informative"):
         s = _signal(cost_r=1.5)
@@ -270,7 +303,7 @@ def test_extreme_cost_blocks_in_both_modes(cfg) -> None:
 
 def test_high_cost_is_a_warning_not_a_block(cfg) -> None:
     """Un coste alto pero asumible (tipico en M1) avisa, no bloquea: el usuario decide."""
-    engine = SignalEngine(cfg, md=None, artifacts=None)  # type: ignore[arg-type]
+    engine = _engine(cfg)
     s = _signal(cost_r=0.5)  # >= HIGH_COST_R (0.35) pero <= max_cost_r (1.0)
     engine._apply_gates(s, "informative", datetime(2026, 9, 22, 10, 5, tzinfo=UTC))
     assert s.emit and any("coste alto" in w for w in s.warnings)
@@ -278,7 +311,7 @@ def test_high_cost_is_a_warning_not_a_block(cfg) -> None:
 
 def test_blown_out_spread_blocks_in_both_modes(cfg) -> None:
     """Spread actual muy por encima del habitual (noticia/iliquidez): no se emite."""
-    engine = SignalEngine(cfg, md=None, artifacts=None)  # type: ignore[arg-type]
+    engine = _engine(cfg)
     now = datetime(2026, 9, 22, 10, 5, tzinfo=UTC)
     for mode in ("strict", "informative"):
         s = _signal(spread_ratio=5.0)
@@ -288,7 +321,7 @@ def test_blown_out_spread_blocks_in_both_modes(cfg) -> None:
 
 def test_level_before_tp1_is_warned(cfg) -> None:
     """Un nivel en contra antes del TP1 no bloquea, pero se avisa."""
-    engine = SignalEngine(cfg, md=None, artifacts=None)  # type: ignore[arg-type]
+    engine = _engine(cfg)
     s = _signal(room_to_level_r=0.5)  # nivel a 0.5R, con TP1 a 1.0R
     engine._apply_gates(s, "informative", datetime(2026, 9, 22, 10, 5, tzinfo=UTC))
     assert s.emit and any("antes del TP1" in w for w in s.warnings)
@@ -297,7 +330,7 @@ def test_level_before_tp1_is_warned(cfg) -> None:
 def test_model_vs_similar_divergence_is_warned(cfg) -> None:
     """Si el modelo y la tasa real de casos parecidos discrepan mucho, se avisa
     (podria estar extrapolando); un margen pequeño no molesta."""
-    engine = SignalEngine(cfg, md=None, artifacts=None)  # type: ignore[arg-type]
+    engine = _engine(cfg)
     now = datetime(2026, 9, 22, 10, 5, tzinfo=UTC)
     diverge = _signal(p_tp1=0.70, similar_tp1_rate=0.50)  # 20 pp de diferencia
     engine._apply_gates(diverge, "informative", now)

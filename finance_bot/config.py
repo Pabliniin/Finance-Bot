@@ -87,6 +87,11 @@ class SignalsConfig(BaseModel):
     # mercado esta iliquido o hay una noticia encima y la entrada saldria mucho
     # peor de lo previsto: no se emite. 0 lo desactiva.
     max_spread_multiple: float = Field(default=3.0, ge=0)
+    # FOCO de emision: si se rellenan, el bot solo EMITE señales de estos
+    # instrumentos / temporalidades (el resto se sigue calculando para el contexto
+    # y se ve en /analisis, pero no se envia). Listas vacias = emitir de todo.
+    focus_instruments: list[str] = Field(default_factory=list)
+    focus_timeframes: list[str] = Field(default_factory=list)
 
 
 class SessionsConfig(BaseModel):
