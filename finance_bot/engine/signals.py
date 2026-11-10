@@ -68,6 +68,9 @@ HIGH_COST_R = 0.35
 # Si la probabilidad del modelo y la tasa real de casos parecidos discrepan mas
 # que esto (en puntos), se avisa: el modelo podria estar extrapolando.
 PROB_DIVERGENCE = 0.15
+# Si las temporalidades mayores votan en contra con esta fuerza (sumada), la
+# señal va a contracorriente de la tendencia mayor: mas arriesgada, se avisa.
+HTF_COUNTER_TREND = 8
 # Al comparar señales por expectativa, la basada en POCOS casos se encoge hacia 0:
 # una expectativa alta con pocos casos es menos fiable que una algo menor con
 # muchos. Peso del prior (en "numero de casos equivalentes").
@@ -166,6 +169,9 @@ class Signal:
     # Distancia en R hasta el primer nivel en contra (resistencia en compras,
     # soporte en ventas). None si no hay nivel identificado.
     room_to_level_r: float | None = None
+    # Contexto de las temporalidades mayores en la direccion de la señal: >0 a
+    # favor de la tendencia mayor, <0 a contracorriente.
+    htf_bias: int = 0
     blockers: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
@@ -351,6 +357,10 @@ class SignalEngine:
         views: dict[str, TimeframeView] = {}
         signals: list[Signal] = []
         data_until = None
+        # 1a pasada: vistas de TODAS las temporalidades + candidatos frescos. Asi,
+        # al construir una señal, ya se conoce el contexto de las temporalidades
+        # mayores (para avisar si va a contracorriente).
+        pending: dict[str, pd.DataFrame] = {}
         for tf in timeframes:
             f = feats.get(tf)
             if f is None or f.empty:
@@ -366,10 +376,13 @@ class SignalEngine:
             plan_tf = self.cfg.timeframes[tf]
             allowed = self.cfg.sessions_utc.allowed_hours if tf in self.cfg.sessions_utc.intraday_timeframes else None
             cand = generate_candidates(f, symbol, tf, plan_tf, allowed)
-            if cand.empty or cand.index[-1] != f.index[-1] or stale:
-                continue
+            if not (cand.empty or cand.index[-1] != f.index[-1] or stale):
+                pending[tf] = cand.iloc[[-1]]
+
+        # 2a pasada: construir las señales con el contexto completo ya disponible.
+        for tf, cand in pending.items():
             signal = self._build_signal(
-                symbol, tf, cand.iloc[[-1]], views[tf], quote, eurusd, capital_eur, risk_pct, mode, news, now
+                symbol, tf, cand, views[tf], views, quote, eurusd, capital_eur, risk_pct, mode, news, now
             )
             if signal is not None:
                 signals.append(signal)
@@ -423,6 +436,7 @@ class SignalEngine:
         tf: str,
         cand: pd.DataFrame,
         view: TimeframeView,
+        views: dict[str, TimeframeView],
         quote: tuple[float, float] | None,
         eurusd: float | None,
         capital_eur: float,
@@ -439,6 +453,10 @@ class SignalEngine:
         plan = self.cfg.plans[plan_name]
         model = self.artifacts.models[plan_name]
         direction = int(row["direction"])
+        # Contexto de las temporalidades MAYORES, en la direccion de la señal:
+        # positivo = a favor de la tendencia mayor; negativo = a contracorriente.
+        higher = [v for t, v in views.items() if TF_MINUTES[t] > TF_MINUTES[tf]]
+        htf_bias = direction * sum(v.score for v in higher)
 
         X = model_features(cand)
         probs = model.predict(X)
@@ -534,6 +552,7 @@ class SignalEngine:
             extra_target_r=self.cfg.signals.extra_target_r,
             spread_ratio=spread_ratio,
             room_to_level_r=room_to_level_r,
+            htf_bias=htf_bias,
         )
         self._apply_gates(signal, mode, now)
         return signal
@@ -608,6 +627,13 @@ class SignalEngine:
             s.warnings.append(
                 f"el modelo estima {s.p_tp1:.0%} de TP1, pero en {s.similar_n} casos parecidos se cumplio "
                 f"{s.similar_tp1_rate:.0%}: hazle menos caso al numero del modelo aqui"
+            )
+        # Señal a contracorriente de la tendencia de las temporalidades mayores:
+        # operar a favor del contexto mayor suele ser mas seguro.
+        if s.htf_bias <= -HTF_COUNTER_TREND:
+            s.warnings.append(
+                f"va a CONTRACORRIENTE de las temporalidades mayores (contexto {s.htf_bias:+d}): operacion "
+                "contra la tendencia de fondo, mas arriesgada"
             )
         # Confluencia fuerte: se exige que muchas estrategias coincidan. Filtra los
         # setups flojos incluso en informativo; el usuario quiere pocas y solidas.

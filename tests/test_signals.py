@@ -160,6 +160,19 @@ def test_focus_blocks_what_is_out_of_focus(cfg) -> None:
     assert not off_tf.emit and any("foco" in b for b in off_tf.blockers)
 
 
+def test_counter_trend_to_higher_timeframes_is_warned(cfg) -> None:
+    """Una señal contra la tendencia de las temporalidades mayores se marca como
+    mas arriesgada; a favor, no molesta."""
+    engine = _engine(cfg)
+    now = datetime(2026, 9, 22, 10, 5, tzinfo=UTC)
+    against = _signal(htf_bias=-12)
+    engine._apply_gates(against, "informative", now)
+    assert against.emit and any("CONTRACORRIENTE" in w for w in against.warnings)
+    aligned = _signal(htf_bias=10)
+    engine._apply_gates(aligned, "informative", now)
+    assert not any("CONTRACORRIENTE" in w for w in aligned.warnings)
+
+
 def test_gates_strict_mode(cfg) -> None:
     engine = _engine(cfg)
     now = datetime(2026, 9, 22, 10, tzinfo=UTC)
