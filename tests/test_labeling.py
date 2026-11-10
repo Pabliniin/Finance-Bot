@@ -108,6 +108,16 @@ def test_wednesday_rollover_counts_triple() -> None:
     assert cumw[-1] - cumw[0] >= 7  # lun-vie con miercoles x3 = 1+1+3+1+1
 
 
+def test_rollover_survives_the_dst_change() -> None:
+    """REGRESION: un rango que cruza el cambio de hora (1-nov-2026, la hora 01:00
+    es ambigua) no debe reventar; antes tumbaba el seguimiento en cada escaneo."""
+    start = pd.Timestamp("2026-10-30 12:00", tz="UTC")
+    end = pd.Timestamp("2026-11-03 12:00", tz="UTC")
+    stamps, cumw = rollover_schedule(start, end)
+    assert len(stamps) > 0 and cumw[-1] > cumw[0]
+    assert pd.DatetimeIndex(stamps.astype("datetime64[ns]")).is_monotonic_increasing
+
+
 def test_costs_make_random_trades_lose_on_average(cfg) -> None:
     """Con costes, entradas en un camino sin tendencia deben perder de media."""
     inst = cfg.instrument("XAUUSD")

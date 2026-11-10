@@ -35,14 +35,19 @@ def ns(values: pd.DatetimeIndex | pd.Series) -> np.ndarray:
 
 
 def rollover_schedule(start: pd.Timestamp, end: pd.Timestamp) -> tuple[np.ndarray, np.ndarray]:
-    """Instantes de rollover (UTC, ns) y peso acumulado (miercoles = 3)."""
-    days = pd.date_range(
-        start.tz_convert(_NY).normalize() - pd.Timedelta(days=1),
-        end.tz_convert(_NY).normalize() + pd.Timedelta(days=1),
-        freq="D",
-    )
+    """Instantes de rollover (UTC, ns) y peso acumulado (miercoles = 3).
+
+    Los dias se generan SIN zona horaria (naive) y solo se localizan las 17:00 de
+    Nueva York al final: generar un rango diario con tz choca con la hora ambigua
+    del cambio de hora (p.ej. 2026-11-01 01:00), aunque el rollover de las 17:00
+    nunca cae en esa franja. Misma tecnica que bars.py para las sesiones."""
+    first = start.tz_convert(_NY).normalize().tz_localize(None) - pd.Timedelta(days=1)
+    last = end.tz_convert(_NY).normalize().tz_localize(None) + pd.Timedelta(days=1)
+    days = pd.date_range(first, last, freq="D")  # naive: sin lios de DST
     days = days[days.dayofweek < 5]
-    stamps = (days + pd.Timedelta(hours=17)).tz_convert("UTC")
+    stamps = (days + pd.Timedelta(hours=17)).tz_localize(
+        _NY, ambiguous=True, nonexistent="shift_forward"
+    ).tz_convert("UTC")
     weights = np.where(days.dayofweek == 2, 3.0, 1.0)
     return ns(stamps), np.concatenate([[0.0], np.cumsum(weights)])
 
