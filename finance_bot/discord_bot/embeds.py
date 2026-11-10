@@ -417,9 +417,16 @@ def open_signals_embed(
             f"TP2     {price(s['tp2'], digits)}\n```"
         )
         manual = s.get("source") == "manual"
-        extra = f"**{now_r:+.2f}R** ahora · " if now_r is not None else ""
-        extra += "tuya, sin probabilidad del modelo" if manual else f"TP1 {pct(s['p_tp1'])}"
-        extra += f" · desde {when(s['signal_time'])}"
+        bits = []
+        if now_r is not None:
+            bits.append(f"{'🟢' if now_r >= 0 else '🔴'} **{now_r:+.2f}R** ahora")
+            r_price = float(s["r_price"]) if s.get("r_price") else 0.0
+            tp1_r = abs(float(s["tp1"]) - float(s["entry"])) / r_price if r_price else 0.0
+            if not s["tp1_notified"] and tp1_r > 0:
+                bits.append(f"{max(0, min(100, 100 * now_r / tp1_r)):.0f}% hacia TP1")
+        bits.append("tuya, sin modelo" if manual else f"prob. TP1 {pct(s['p_tp1'])}")
+        bits.append(f"desde {when(s['signal_time'])}")
+        extra = " · ".join(bits)
         if s["tp1_notified"]:
             extra += "\n✅ TP1 tocado: mitad cerrada, stop en la entrada"
         icon = "👤" if manual else ("🟢" if s["direction"] > 0 else "🔴")
