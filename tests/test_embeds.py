@@ -155,6 +155,16 @@ def test_signal_respects_discord_limits(cfg) -> None:
     assert all(len(f.name) <= 256 for f in embed.fields)
 
 
+def test_signal_shows_euro_risk_and_target_when_sized(cfg) -> None:
+    """Dato clave para copy-trading: cuanto arriesgas y cuanto ganas en euros."""
+    from finance_bot.risk import PositionSize
+
+    size = PositionSize(lots=0.05, risk_eur=12.5, risk_pct=5.0, allowed_risk_eur=12.5, fits=True, note="ok")
+    embed = embeds.signal_embed(_signal(symbol="EURUSD", size=size, partial=0.5, targets_r=(1.0, 2.0)), cfg)
+    field = next(f for f in embed.fields if "Riesgo / objetivo" in f.name)
+    assert "12.50" in field.value and "18.75" in field.value  # -riesgo y +1.5R (0.5*1 + 0.5*2)
+
+
 def test_every_signal_carries_the_disclaimer(cfg) -> None:
     embed = embeds.signal_embed(_signal(), cfg)
     footer = (embed.footer.text or "").lower()

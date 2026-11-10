@@ -132,8 +132,9 @@ def _plan_block(s: Signal, digits: int) -> str:
     # Filas cortas (caben en el movil sin partirse); lo que significan, debajo.
     extra = " TP3 es extra, fuera del plan." if any(r > s.targets_r[1] for _, _, r, _ in s.targets()) else ""
     legend = (
-        f"En TP1 cierra {s.partial:.0%} y sube el stop a la entrada.{extra} "
-        "Los % son cuantos casos parecidos llegaron ahi antes del stop; Ref. es el precio con el que se midio."
+        f"Riesgo:beneficio ≈ 1:{s.targets_r[1]:g} (a TP2). En TP1 cierra {s.partial:.0%} y sube el stop a la "
+        f"entrada.{extra} Los % son cuantos casos parecidos llegaron ahi antes del stop; Ref. es el precio "
+        "con el que se midio."
     )
     return "```\n" + "\n".join(rows) + "\n```" + legend
 
@@ -173,6 +174,13 @@ def signal_embed(s: Signal, cfg: AppConfig) -> discord.Embed:
         _add(embed, "💶 Tamaño", size, True)
     if s.live_quote and s.spread_ratio is not None:
         _add(embed, "💧 Spread ahora", _spread_note(s.spread_ratio), True)
+    if s.size is not None and s.size.fits:
+        plan_r = s.partial * s.targets_r[0] + (1 - s.partial) * s.targets_r[1]  # plan completo a TP2
+        riesgo_obj = (
+            f"−{s.size.risk_eur:.2f} € si salta el stop\n"
+            f"+{plan_r * s.size.risk_eur:.2f} € si llega a TP2 (≈{plan_r:g}R)"
+        )
+        _add(embed, "💰 Riesgo / objetivo", riesgo_obj, True)
     fam = _family_line(s.votes_for + s.votes_against, s.direction)
     _add(
         embed,
